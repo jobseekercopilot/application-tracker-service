@@ -22,3 +22,5 @@ jobs:
           cache: maven
       - name: Verify
         run: mvn -B clean verify
+      - name: Build container from source
+        run: docker build --tag application-tracker-service:ci .

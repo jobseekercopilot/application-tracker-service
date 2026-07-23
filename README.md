@@ -14,11 +14,15 @@ Java 17 and Maven are required.
 mvn -B clean verify
 ```
 
-The inherited source passes 23 tests when its repository-local generated
-Document Store client JAR is present. A clean checkout intentionally exposes that
-unreproducible dependency until the contract/client build is corrected.
+The service builds and runs its tests from tracked source only. The inherited,
+unused repository-local Document Store client dependency has been removed;
+Document Store integration uses the repository-owned HTTP adapter.
 
-The captured OpenAPI contract is in `contracts/openapi.json`.
+The producer-owned OpenAPI contract is in `contracts/openapi.json`.
+`OpenApiExportTest` generates the runtime document and fails `mvn clean verify`
+on semantic drift. See [`contracts/README.md`](contracts/README.md) for the
+reviewed update and consumer-pinning process. The Docker build runs the same
+clean verification before packaging.
 
 ## Licence
 
