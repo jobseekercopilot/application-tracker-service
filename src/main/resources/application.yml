@@ -24,12 +24,23 @@ logging:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%X{correlationId}] [%X{serviceName}] [%thread] %logger{36} - %msg%n"
   level:
     com.jobseekercopilot: ${APP_LOG_LEVEL:INFO}
+    org.springframework.web.servlet.handler.HandlerMappingIntrospector: ERROR
 
 management:
   endpoints:
     web:
       exposure:
         include: health
+
+application-tracker:
+  security:
+    jwk-set-uri: ${AUTH_JWKS_URI:http://localhost:8084/.well-known/jwks.json}
+    issuer: ${APPLICATION_TRACKER_JWT_ISSUER:job-seeker-copilot-authentication}
+    audience: ${APPLICATION_TRACKER_JWT_AUDIENCE:job-seeker-copilot-services}
+    service-identity:
+      producer-token: ${APPLICATION_TRACKER_PRODUCER_TOKEN:}
+      reader-token: ${APPLICATION_TRACKER_READER_TOKEN:}
+    environment-data-token: ${ENVIRONMENT_DATA_TOKEN:}
 
 services:
   document-store-service:

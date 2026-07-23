@@ -66,7 +66,7 @@ class ApplicationRecordServiceTest {
 
         when(repository.save(any(ApplicationRecord.class))).thenReturn(savedRecord);
 
-        ApplicationRecordResponse response = service.createApplication(request);
+        ApplicationRecordResponse response = service.createApplication("user-123", request);
 
         assertThat(response).isNotNull();
         assertThat(response.getUserId()).isEqualTo("user-123");
@@ -96,9 +96,9 @@ class ApplicationRecordServiceTest {
                 .updatedAt(LocalDateTime.now())
                 .build();
 
-        when(repository.findById(id)).thenReturn(Optional.of(record));
+        when(repository.findByIdAndUserId(id, "user-123")).thenReturn(Optional.of(record));
 
-        ApplicationRecordResponse response = service.getApplicationById(id);
+        ApplicationRecordResponse response = service.getApplicationById("user-123", id);
 
         assertThat(response).isNotNull();
         assertThat(response.getId()).isEqualTo(id);
@@ -107,11 +107,11 @@ class ApplicationRecordServiceTest {
     @Test
     void getApplicationById_WhenNotExists_ShouldThrowException() {
         UUID id = UUID.randomUUID();
-        when(repository.findById(id)).thenReturn(Optional.empty());
+        when(repository.findByIdAndUserId(id, "user-123")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.getApplicationById(id))
+        assertThatThrownBy(() -> service.getApplicationById("user-123", id))
                 .isInstanceOf(ResourceNotFoundException.class)
-                .hasMessageContaining("Application not found");
+                .hasMessage("Application record not found.");
     }
 
     @Test
@@ -150,10 +150,11 @@ class ApplicationRecordServiceTest {
                 .updatedAt(LocalDateTime.now())
                 .build();
 
-        when(repository.findByCvDocumentIdOrCoverLetterDocumentIdOrderByUpdatedAtDesc("cv-123", "cv-123"))
+        when(repository.findByUserIdAndDocumentId("user-123", "cv-123"))
                 .thenReturn(List.of(record));
 
-        ApplicationRecordResponse response = service.getApplicationByDocumentId("cv-123");
+        ApplicationRecordResponse response =
+                service.getApplicationByDocumentId("user-123", "cv-123");
 
         assertThat(response.getId()).isEqualTo(record.getId());
         assertThat(response.getCvDocumentId()).isEqualTo("cv-123");
@@ -179,10 +180,10 @@ class ApplicationRecordServiceTest {
                 .updatedAt(LocalDateTime.now())
                 .build();
 
-        when(repository.findById(id)).thenReturn(Optional.of(record));
+        when(repository.findByIdAndUserId(id, "user-123")).thenReturn(Optional.of(record));
         when(repository.save(any(ApplicationRecord.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        ApplicationRecordResponse response = service.updateStatus(id, request);
+        ApplicationRecordResponse response = service.updateStatus("user-123", id, request);
 
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.APPLIED);
         assertThat(response.getCvDocumentId()).isEqualTo("cv-123");
@@ -212,10 +213,10 @@ class ApplicationRecordServiceTest {
                 .updatedAt(LocalDateTime.now().minusDays(1))
                 .build();
 
-        when(repository.findById(id)).thenReturn(Optional.of(record));
+        when(repository.findByIdAndUserId(id, "user-123")).thenReturn(Optional.of(record));
         when(repository.save(any(ApplicationRecord.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        ApplicationRecordResponse response = service.updateStatus(id, request);
+        ApplicationRecordResponse response = service.updateStatus("user-123", id, request);
 
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.INTERVIEW);
         assertThat(response.getAppliedAt()).isEqualTo(appliedAt);
@@ -235,9 +236,9 @@ class ApplicationRecordServiceTest {
                 .status(ApplicationStatus.DOCUMENTS_GENERATED)
                 .build();
 
-        when(repository.findById(id)).thenReturn(Optional.of(record));
+        when(repository.findByIdAndUserId(id, "user-123")).thenReturn(Optional.of(record));
 
-        assertThatThrownBy(() -> service.updateStatus(id, request))
+        assertThatThrownBy(() -> service.updateStatus("user-123", id, request))
                 .isInstanceOf(InvalidStatusException.class)
                 .hasMessageContaining("Invalid status");
     }
@@ -245,21 +246,25 @@ class ApplicationRecordServiceTest {
     @Test
     void deleteApplication_WhenExists_ShouldDelete() {
         UUID id = UUID.randomUUID();
-        when(repository.existsById(id)).thenReturn(true);
+        ApplicationRecord record = ApplicationRecord.builder()
+                .id(id)
+                .userId("user-123")
+                .build();
+        when(repository.findByIdAndUserId(id, "user-123")).thenReturn(Optional.of(record));
 
-        service.deleteApplication(id);
+        service.deleteApplication("user-123", id);
 
-        verify(repository).deleteById(id);
+        verify(repository).delete(record);
     }
 
     @Test
     void deleteApplication_WhenNotExists_ShouldThrowException() {
         UUID id = UUID.randomUUID();
-        when(repository.existsById(id)).thenReturn(false);
+        when(repository.findByIdAndUserId(id, "user-123")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.deleteApplication(id))
+        assertThatThrownBy(() -> service.deleteApplication("user-123", id))
                 .isInstanceOf(ResourceNotFoundException.class)
-                .hasMessageContaining("Application not found");
+                .hasMessage("Application record not found.");
     }
 
     @Test
@@ -276,9 +281,10 @@ class ApplicationRecordServiceTest {
                 .status(ApplicationStatus.DOCUMENTS_GENERATED)
                 .build();
 
-        when(repository.findById(id)).thenReturn(Optional.of(record));
+        when(repository.findByIdAndUserId(id, "user-123")).thenReturn(Optional.of(record));
 
-        WithdrawGeneratedApplicationResponse response = service.withdrawGeneratedApplication(id);
+        WithdrawGeneratedApplicationResponse response =
+                service.withdrawGeneratedApplication("user-123", id, null);
 
         assertThat(response.getApplicationId()).isEqualTo(id);
         assertThat(response.getStatus()).isEqualTo("NEW");
@@ -296,9 +302,10 @@ class ApplicationRecordServiceTest {
                 .status(ApplicationStatus.APPLIED)
                 .build();
 
-        when(repository.findById(id)).thenReturn(Optional.of(record));
+        when(repository.findByIdAndUserId(id, "user-123")).thenReturn(Optional.of(record));
 
-        assertThatThrownBy(() -> service.withdrawGeneratedApplication(id))
+        assertThatThrownBy(() ->
+                service.withdrawGeneratedApplication("user-123", id, null))
                 .isInstanceOf(InvalidStatusException.class)
                 .hasMessageContaining("only be withdrawn before applying");
         verify(repository, never()).delete(record);

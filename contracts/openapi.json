@@ -48,7 +48,10 @@
               }
             }
           }
-        }
+        },
+        "security" : [ {
+          "environmentDataToken" : [ ]
+        } ]
       }
     },
     "/api/v1/applications" : {
@@ -88,7 +91,12 @@
               }
             }
           }
-        }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        }, {
+          "serviceToken" : [ ]
+        } ]
       }
     },
     "/api/v1/applications/{id}/withdraw-generated" : {
@@ -138,7 +146,10 @@
               }
             }
           }
-        }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
       }
     },
     "/api/v1/applications/{id}/status" : {
@@ -197,7 +208,10 @@
               }
             }
           }
-        }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
       }
     },
     "/api/v1/applications/{id}/document-reference" : {
@@ -213,6 +227,14 @@
           "schema" : {
             "type" : "string",
             "format" : "uuid"
+          }
+        }, {
+          "name" : "X-Application-Owner",
+          "in" : "header",
+          "description" : "Required owner context for approved service identities",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
           }
         } ],
         "requestBody" : {
@@ -236,7 +258,12 @@
               }
             }
           }
-        }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        }, {
+          "serviceToken" : [ ]
+        } ]
       }
     },
     "/internal/system-data/verify/applications/{userId}" : {
@@ -262,7 +289,10 @@
               }
             }
           }
-        }
+        },
+        "security" : [ {
+          "environmentDataToken" : [ ]
+        } ]
       }
     },
     "/api/v1/applications/{id}" : {
@@ -278,6 +308,14 @@
           "schema" : {
             "type" : "string",
             "format" : "uuid"
+          }
+        }, {
+          "name" : "X-Application-Owner",
+          "in" : "header",
+          "description" : "Required owner context for approved service identities",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
           }
         } ],
         "responses" : {
@@ -301,7 +339,12 @@
               }
             }
           }
-        }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        }, {
+          "serviceToken" : [ ]
+        } ]
       },
       "delete" : {
         "tags" : [ "Application Records" ],
@@ -324,7 +367,10 @@
           "404" : {
             "description" : "Application record not found"
           }
-        }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
       }
     },
     "/api/v1/applications/user/{userId}" : {
@@ -355,7 +401,12 @@
               }
             }
           }
-        }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        }, {
+          "serviceToken" : [ ]
+        } ]
       }
     },
     "/api/v1/applications/document/{documentId}" : {
@@ -368,6 +419,14 @@
           "in" : "path",
           "description" : "Generated CV or cover letter document ID",
           "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "name" : "X-Application-Owner",
+          "in" : "header",
+          "description" : "Required owner context for approved service identities",
+          "required" : false,
           "schema" : {
             "type" : "string"
           }
@@ -393,7 +452,12 @@
               }
             }
           }
-        }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        }, {
+          "serviceToken" : [ ]
+        } ]
       }
     },
     "/internal/system-data/scenario/{scenarioId}/applications/{userId}" : {
@@ -426,7 +490,10 @@
               }
             }
           }
-        }
+        },
+        "security" : [ {
+          "environmentDataToken" : [ ]
+        } ]
       }
     }
   },
@@ -709,6 +776,23 @@
             "type" : "string"
           }
         }
+      }
+    },
+    "securitySchemes" : {
+      "bearerAuth" : {
+        "type" : "http",
+        "scheme" : "bearer",
+        "bearerFormat" : "JWT"
+      },
+      "serviceToken" : {
+        "type" : "apiKey",
+        "name" : "X-Service-Token",
+        "in" : "header"
+      },
+      "environmentDataToken" : {
+        "type" : "apiKey",
+        "name" : "X-Environment-Data-Token",
+        "in" : "header"
       }
     }
   }

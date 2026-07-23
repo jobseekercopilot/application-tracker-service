@@ -24,6 +24,31 @@ on semantic drift. See [`contracts/README.md`](contracts/README.md) for the
 reviewed update and consumer-pinning process. The Docker build runs the same
 clean verification before packaging.
 
+## Security boundary
+
+Every public application request is authenticated. User requests require an
+RS256 Bearer access token and derive ownership only from JWT `sub`. Approved
+backend callers use distinct runtime-injected producer or reader credentials
+with least-privilege routes and explicit owner context. System Data uses a
+third independent credential and remains disabled unless explicitly enabled in
+an allowed non-production environment.
+
+See [`docs/SECURITY_BOUNDARY.md`](docs/SECURITY_BOUNDARY.md) for the claims,
+authorization matrix, denial semantics, configuration and rollout contract.
+
+| Environment variable | Purpose |
+| --- | --- |
+| `AUTH_JWKS_URI` | Authentication Service JWKS endpoint |
+| `APPLICATION_TRACKER_JWT_ISSUER` | Required access-token issuer |
+| `APPLICATION_TRACKER_JWT_AUDIENCE` | Required access-token audience |
+| `APPLICATION_TRACKER_PRODUCER_TOKEN` | Create/read/document-link service identity |
+| `APPLICATION_TRACKER_READER_TOKEN` | Read-only service identity |
+| `ENVIRONMENT_DATA_TOKEN` | Independent non-production fixture identity |
+
+All three service credentials must contain at least 32 bytes, must be distinct
+and must be supplied at runtime. Do not put real values in source, examples,
+logs or issue comments.
+
 ## Licence
 
 Proprietary and confidential. See `LICENSE`.

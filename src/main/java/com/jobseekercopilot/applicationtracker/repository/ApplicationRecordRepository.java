@@ -2,9 +2,12 @@ package com.jobseekercopilot.applicationtracker.repository;
 
 import com.jobseekercopilot.applicationtracker.entity.ApplicationRecord;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -12,7 +15,19 @@ public interface ApplicationRecordRepository extends JpaRepository<ApplicationRe
 
     List<ApplicationRecord> findByUserId(String userId);
 
+    Optional<ApplicationRecord> findByIdAndUserId(UUID id, String userId);
+
     void deleteByUserId(String userId);
 
-    List<ApplicationRecord> findByCvDocumentIdOrCoverLetterDocumentIdOrderByUpdatedAtDesc(String cvDocumentId, String coverLetterDocumentId);
+    @Query("""
+            select record
+            from ApplicationRecord record
+            where record.userId = :userId
+              and (record.cvDocumentId = :documentId
+                   or record.coverLetterDocumentId = :documentId)
+            order by record.updatedAt desc
+            """)
+    List<ApplicationRecord> findByUserIdAndDocumentId(
+            @Param("userId") String userId,
+            @Param("documentId") String documentId);
 }

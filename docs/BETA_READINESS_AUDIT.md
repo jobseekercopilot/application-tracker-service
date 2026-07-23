@@ -21,17 +21,23 @@ enablement or represent a durable, access-controlled source of truth.
 - APP-02 removes that unused binary dependency: the clean source build now owns
   its OpenAPI contract, semantically drift-checks it in Maven/CI, and makes the
   source-only Docker build run the same tests.
+- APP-03 adds fail-closed RS256 access-token verification, JWT-subject ownership,
+  separate producer/reader/environment-data service credentials, owner-scoped
+  repository queries and stable non-enumerating denial responses. The clean
+  build passes 32 tests, including forged and invalid token cases, cross-user
+  record/document/list/mutation attempts and least-privilege service access.
 
 ## Critical findings
 
-### Unauthenticated ownership and enumeration
+### Ownership enforcement implemented; consumer rollout incomplete
 
-The service has no authentication or authorization layer. Creation accepts a JSON
-`userId`; listing accepts a user ID in the path; record, document, update, withdraw
-and delete operations use only identifiers. Any caller able to reach the service
-can read or mutate another user's application. Upstream Job Finder routes have
-their own open ownership issue, but the source-of-truth service must also enforce
-authenticated user and service boundaries.
+APP-03 closes the source-of-truth service boundary: user ownership comes only
+from a validated access-token subject, every record and document lookup includes
+that owner, producer and reader identities have separate least-privilege
+credentials, and System Data has an independent credential. The service remains
+a beta blocker until Job Finder, CV/cover-letter, document generation, Job
+Matching, Reporting and Infrastructure adopt those credentials and owner
+semantics and the integrated journeys pass.
 
 ### Non-durable database and schema
 
@@ -76,9 +82,10 @@ no service authentication.
 
 User lists are unpaginated and unsorted. There are no indexes for user, job or
 document lookups and document lookup loads all matches before selecting the first.
-Logs include raw user, application, job and document identifiers. Only health is
-exposed; no application-transition, downstream consistency, latency/error,
-reconciliation or audit-event telemetry exists.
+APP-03 removes raw user, application, job and document identifiers from its
+request and service logs. Only health is exposed; no application-transition,
+downstream consistency, latency/error, reconciliation or audit-event telemetry
+exists.
 
 ### Contracts, tests and licensing
 
@@ -86,18 +93,19 @@ The inherited build used a repository-local `systemPath` generated-client JAR
 even though runtime code uses a manually constructed `RestTemplate`. APP-02
 removes the unused binary, makes the Docker build verify source, and
 runtime-checks the tracked OpenAPI document. Its conflicting MIT metadata is
-replaced with the repository's proprietary classification. Existing service tests do not
-cover authentication, cross-user access, valid transition rules, duplicate create,
-concurrency, migrations, pagination, cleanup failures, System Data isolation or
-privacy redaction. Browser E2E steps can wait and return without asserting failure,
-allowing false-positive tracking journeys.
+replaced with the repository's proprietary classification. APP-03 adds
+authentication, cross-user access, System Data isolation and privacy-redaction
+coverage. Tests still do not cover valid transition rules, duplicate create,
+concurrency, migrations, pagination or cleanup failures. Browser E2E steps can
+wait and return without asserting failure, allowing false-positive tracking
+journeys.
 
 ## Functional classification
 
 | Capability | Result |
 |---|---|
 | Create tracked application | Incomplete; generated-document-only and non-idempotent |
-| User/application/document lookup | Unsafe; caller-selected ownership |
+| User/application/document lookup | Owner-scoped in the service; consumer rollout pending |
 | Status lifecycle | Incomplete; unrestricted current-state replacement |
 | Activity history/timeline | Absent; clients synthesize lossy events |
 | Document replacement | Incomplete; cross-service consistency gap |
