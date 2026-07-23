@@ -18,6 +18,9 @@ enablement or represent a durable, access-controlled source of truth.
   environment flag.
 - The inherited source passed 23 tests with no failures, errors or skips when its
   local generated Document Store client JAR was present.
+- APP-02 removes that unused binary dependency: the clean source build now owns
+  its OpenAPI contract, semantically drift-checks it in Maven/CI, and makes the
+  source-only Docker build run the same tests.
 
 ## Critical findings
 
@@ -79,11 +82,11 @@ reconciliation or audit-event telemetry exists.
 
 ### Contracts, tests and licensing
 
-The build uses a repository-local `systemPath` generated-client JAR even though
-runtime code uses a manually constructed `RestTemplate`. A clean checkout cannot
-resolve that JAR, and the Docker build copies the missing `libs` directory.
-OpenAPI and README content drift from the implementation, including an MIT claim
-that conflicts with the proprietary repository. Existing service tests do not
+The inherited build used a repository-local `systemPath` generated-client JAR
+even though runtime code uses a manually constructed `RestTemplate`. APP-02
+removes the unused binary, makes the Docker build verify source, and
+runtime-checks the tracked OpenAPI document. Its conflicting MIT metadata is
+replaced with the repository's proprietary classification. Existing service tests do not
 cover authentication, cross-user access, valid transition rules, duplicate create,
 concurrency, migrations, pagination, cleanup failures, System Data isolation or
 privacy redaction. Browser E2E steps can wait and return without asserting failure,
@@ -104,5 +107,6 @@ allowing false-positive tracking journeys.
 | Durable storage/migrations | Absent but required |
 | Observability/operations | Basic request logs and health only |
 
-The Application Tracking epic contains focused follow-up issues. All remain
-Backlog and no issue was implemented during this audit.
+The Application Tracking epic contains focused follow-up issues. APP-02 is the
+first implementation slice; all other findings remain separately tracked and
+this document is still not a beta-readiness approval.

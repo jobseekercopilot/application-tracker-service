@@ -45,14 +45,6 @@
         </dependency>
 
         <dependency>
-            <groupId>com.jobseekercopilot.generated</groupId>
-            <artifactId>document-store-service-client</artifactId>
-            <version>1.0.0</version>
-            <scope>system</scope>
-            <systemPath>${project.basedir}/libs/document-store-service-client-1.0.0.jar</systemPath>
-        </dependency>
-
-        <dependency>
             <groupId>org.openapitools</groupId>
             <artifactId>jackson-databind-nullable</artifactId>
             <version>0.2.10</version>
@@ -102,9 +94,6 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
-                <configuration>
-                    <includeSystemScope>true</includeSystemScope>
-                </configuration>
             </plugin>
         </plugins>
     </build>
