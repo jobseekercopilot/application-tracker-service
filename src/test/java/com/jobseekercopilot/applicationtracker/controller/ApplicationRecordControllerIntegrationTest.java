@@ -1,16 +1,21 @@
 package com.jobseekercopilot.applicationtracker.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jobseekercopilot.applicationtracker.TestJwksServer;
 import com.jobseekercopilot.applicationtracker.dto.CreateApplicationRequest;
 import com.jobseekercopilot.applicationtracker.dto.UpdateStatusRequest;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationRecord;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationStatus;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationRecordRepository;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.UUID;
@@ -26,6 +31,20 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 class ApplicationRecordControllerIntegrationTest {
+
+    private static final TestJwksServer JWKS = new TestJwksServer();
+
+    @DynamicPropertySource
+    static void jwtProperties(DynamicPropertyRegistry registry) {
+        registry.add("application-tracker.security.jwk-set-uri", JWKS::jwkSetUri);
+        registry.add("application-tracker.security.issuer", () -> TestJwksServer.ISSUER);
+        registry.add("application-tracker.security.audience", () -> TestJwksServer.AUDIENCE);
+    }
+
+    @AfterAll
+    static void stopJwks() {
+        JWKS.close();
+    }
 
     @Autowired
     private MockMvc mockMvc;
@@ -48,6 +67,7 @@ class ApplicationRecordControllerIntegrationTest {
                 .build();
 
         mockMvc.perform(post("/api/v1/applications")
+                        .header(HttpHeaders.AUTHORIZATION, authorization("user-123"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
@@ -67,6 +87,7 @@ class ApplicationRecordControllerIntegrationTest {
                 .build();
 
         mockMvc.perform(post("/api/v1/applications")
+                        .header(HttpHeaders.AUTHORIZATION, authorization("user-123"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
@@ -84,7 +105,8 @@ class ApplicationRecordControllerIntegrationTest {
                 .status(ApplicationStatus.DOCUMENTS_GENERATED)
                 .build());
 
-        mockMvc.perform(get("/api/v1/applications/{id}", saved.getId()))
+        mockMvc.perform(get("/api/v1/applications/{id}", saved.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authorization("user-123")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(saved.getId().toString()))
                 .andExpect(jsonPath("$.status").value("DOCUMENTS_GENERATED"));
@@ -92,7 +114,8 @@ class ApplicationRecordControllerIntegrationTest {
 
     @Test
     void getApplicationById_WhenNotExists_ShouldReturn404() throws Exception {
-        mockMvc.perform(get("/api/v1/applications/{id}", UUID.randomUUID()))
+        mockMvc.perform(get("/api/v1/applications/{id}", UUID.randomUUID())
+                        .header(HttpHeaders.AUTHORIZATION, authorization("user-123")))
                 .andExpect(status().isNotFound());
     }
 
@@ -118,7 +141,8 @@ class ApplicationRecordControllerIntegrationTest {
                 .status(ApplicationStatus.DOCUMENTS_GENERATED)
                 .build());
 
-        mockMvc.perform(get("/api/v1/applications/user/{userId}", "user-test"))
+        mockMvc.perform(get("/api/v1/applications/user/{userId}", "user-test")
+                        .header(HttpHeaders.AUTHORIZATION, authorization("user-test")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(2)));
     }
@@ -135,7 +159,8 @@ class ApplicationRecordControllerIntegrationTest {
                 .status(ApplicationStatus.DOCUMENTS_GENERATED)
                 .build());
 
-        mockMvc.perform(get("/api/v1/applications/document/{documentId}", "cv-123"))
+        mockMvc.perform(get("/api/v1/applications/document/{documentId}", "cv-123")
+                        .header(HttpHeaders.AUTHORIZATION, authorization("user-123")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(saved.getId().toString()))
                 .andExpect(jsonPath("$.cvDocumentId").value("cv-123"));
@@ -158,6 +183,7 @@ class ApplicationRecordControllerIntegrationTest {
                 .build();
 
         mockMvc.perform(patch("/api/v1/applications/{id}/status", saved.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authorization("user-123"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -184,6 +210,7 @@ class ApplicationRecordControllerIntegrationTest {
                 .build();
 
         mockMvc.perform(patch("/api/v1/applications/{id}/status", saved.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authorization("user-123"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
@@ -201,7 +228,8 @@ class ApplicationRecordControllerIntegrationTest {
                 .status(ApplicationStatus.DOCUMENTS_GENERATED)
                 .build());
 
-        mockMvc.perform(delete("/api/v1/applications/{id}", saved.getId()))
+        mockMvc.perform(delete("/api/v1/applications/{id}", saved.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authorization("user-123")))
                 .andExpect(status().isNoContent());
     }
 
@@ -217,13 +245,15 @@ class ApplicationRecordControllerIntegrationTest {
                 .status(ApplicationStatus.DOCUMENTS_GENERATED)
                 .build());
 
-        mockMvc.perform(post("/api/v1/applications/{id}/withdraw-generated", saved.getId()))
+        mockMvc.perform(post("/api/v1/applications/{id}/withdraw-generated", saved.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authorization("user-123")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.applicationId").value(saved.getId().toString()))
                 .andExpect(jsonPath("$.status").value("NEW"))
                 .andExpect(jsonPath("$.withdrawn").value(true));
 
-        mockMvc.perform(get("/api/v1/applications/{id}", saved.getId()))
+        mockMvc.perform(get("/api/v1/applications/{id}", saved.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authorization("user-123")))
                 .andExpect(status().isNotFound());
     }
 
@@ -239,11 +269,17 @@ class ApplicationRecordControllerIntegrationTest {
                 .status(ApplicationStatus.APPLIED)
                 .build());
 
-        mockMvc.perform(post("/api/v1/applications/{id}/withdraw-generated", saved.getId()))
+        mockMvc.perform(post("/api/v1/applications/{id}/withdraw-generated", saved.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authorization("user-123")))
                 .andExpect(status().isBadRequest());
 
-        mockMvc.perform(get("/api/v1/applications/{id}", saved.getId()))
+        mockMvc.perform(get("/api/v1/applications/{id}", saved.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authorization("user-123")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("APPLIED"));
+    }
+
+    private static String authorization(String subject) {
+        return "Bearer " + JWKS.validToken(subject);
     }
 }

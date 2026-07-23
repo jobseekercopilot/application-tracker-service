@@ -2,6 +2,7 @@ package com.jobseekercopilot.applicationtracker.systemdata;
 
 import com.jobseekercopilot.applicationtracker.entity.ApplicationRecord;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationRecordRepository;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -17,6 +18,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/internal/system-data")
+@SecurityRequirement(name = "environmentDataToken")
 public class ApplicationTrackerSystemDataController {
     private final EnvironmentDataGuard guard;
     private final ApplicationRecordRepository repository;

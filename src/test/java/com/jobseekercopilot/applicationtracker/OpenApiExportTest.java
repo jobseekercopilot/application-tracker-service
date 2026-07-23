@@ -7,10 +7,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpHeaders;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest
@@ -18,6 +22,19 @@ import org.springframework.test.web.servlet.MockMvc;
 class OpenApiExportTest {
 
     private static final Path CONTRACT = Path.of("contracts/openapi.json");
+    private static final TestJwksServer JWKS = new TestJwksServer();
+
+    @DynamicPropertySource
+    static void jwtProperties(DynamicPropertyRegistry registry) {
+        registry.add("application-tracker.security.jwk-set-uri", JWKS::jwkSetUri);
+        registry.add("application-tracker.security.issuer", () -> TestJwksServer.ISSUER);
+        registry.add("application-tracker.security.audience", () -> TestJwksServer.AUDIENCE);
+    }
+
+    @AfterAll
+    static void stopJwks() {
+        JWKS.close();
+    }
 
     @Autowired
     private MockMvc mockMvc;
@@ -27,7 +44,10 @@ class OpenApiExportTest {
 
     @Test
     void publishedContractMatchesTheRunningApplication() throws Exception {
-        String specification = mockMvc.perform(get("/v3/api-docs"))
+        String specification = mockMvc.perform(get("/v3/api-docs")
+                        .header(
+                                HttpHeaders.AUTHORIZATION,
+                                "Bearer " + JWKS.validToken("contract-reviewer")))
                 .andExpect(status().isOk())
                 .andReturn()
                 .getResponse()

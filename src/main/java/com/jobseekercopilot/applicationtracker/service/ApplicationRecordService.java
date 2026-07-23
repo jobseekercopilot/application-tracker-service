@@ -14,8 +14,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
@@ -51,10 +55,12 @@ public class ApplicationRecordService {
     private String documentStoreBaseUrl;
 
     @Transactional
-    public ApplicationRecordResponse createApplication(CreateApplicationRequest request) {
+    public ApplicationRecordResponse createApplication(
+            String ownerId,
+            CreateApplicationRequest request) {
         long startedAt = System.nanoTime();
         ApplicationRecord record = ApplicationRecord.builder()
-                .userId(request.getUserId())
+                .userId(ownerId)
                 .jobId(request.getJobId())
                 .canonicalJobId(firstNonBlank(request.getCanonicalJobId(), request.getJobId()))
                 .provider(firstNonBlank(request.getProvider(), "REED"))
@@ -68,11 +74,7 @@ public class ApplicationRecordService {
                 .build();
 
         ApplicationRecord saved = repository.save(record);
-        log.info("Application created applicationId={} userId={} jobId={} canonicalJobId={} provider={} cvDocumentLinked={} coverLetterDocumentLinked={} durationMs={}",
-                saved.getId(),
-                saved.getUserId(),
-                saved.getJobId(),
-                saved.getCanonicalJobId(),
+        log.info("Application created provider={} cvDocumentLinked={} coverLetterDocumentLinked={} durationMs={}",
                 saved.getProvider(),
                 saved.getCvDocumentId() != null,
                 saved.getCoverLetterDocumentId() != null,
@@ -80,38 +82,40 @@ public class ApplicationRecordService {
         return mapToResponse(saved);
     }
 
-    public ApplicationRecordResponse getApplicationById(UUID id) {
-        ApplicationRecord record = repository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Application not found with id: " + id));
+    public ApplicationRecordResponse getApplicationById(String ownerId, UUID id) {
+        ApplicationRecord record = findOwnedApplication(ownerId, id);
         return mapToResponse(record);
     }
 
-    public List<ApplicationRecordResponse> getApplicationsForUser(String userId) {
+    public List<ApplicationRecordResponse> getApplicationsForUser(String ownerId) {
         long startedAt = System.nanoTime();
-        List<ApplicationRecordResponse> responses = repository.findByUserId(userId)
+        List<ApplicationRecordResponse> responses = repository.findByUserId(ownerId)
                 .stream()
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
-        log.info("Application lookup by user userId={} count={} durationMs={}",
-                userId,
+        log.info("Owner-scoped application lookup count={} durationMs={}",
                 responses.size(),
                 (System.nanoTime() - startedAt) / 1_000_000);
         return responses;
     }
 
-    public ApplicationRecordResponse getApplicationByDocumentId(String documentId) {
-        ApplicationRecord record = repository.findByCvDocumentIdOrCoverLetterDocumentIdOrderByUpdatedAtDesc(documentId, documentId)
+    public ApplicationRecordResponse getApplicationByDocumentId(
+            String ownerId,
+            String documentId) {
+        ApplicationRecord record = repository.findByUserIdAndDocumentId(ownerId, documentId)
                 .stream()
                 .findFirst()
-                .orElseThrow(() -> new ResourceNotFoundException("Application not found for document id: " + documentId));
+                .orElseThrow(ResourceNotFoundException::applicationNotFound);
         return mapToResponse(record);
     }
 
     @Transactional
-    public ApplicationRecordResponse updateStatus(UUID id, UpdateStatusRequest request) {
+    public ApplicationRecordResponse updateStatus(
+            String ownerId,
+            UUID id,
+            UpdateStatusRequest request) {
         long startedAt = System.nanoTime();
-        ApplicationRecord record = repository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Application not found with id: " + id));
+        ApplicationRecord record = findOwnedApplication(ownerId, id);
 
         ApplicationStatus previousStatus = record.getStatus();
         ApplicationStatus newStatus = parseSupportedStatus(request.getStatus());
@@ -121,9 +125,7 @@ public class ApplicationRecordService {
         }
 
         ApplicationRecord updated = repository.save(record);
-        log.info("Application status updated applicationId={} userId={} previousStatus={} newStatus={} durationMs={}",
-                id,
-                updated.getUserId(),
+        log.info("Owner-scoped application status updated previousStatus={} newStatus={} durationMs={}",
                 previousStatus,
                 newStatus,
                 (System.nanoTime() - startedAt) / 1_000_000);
@@ -131,9 +133,11 @@ public class ApplicationRecordService {
     }
 
     @Transactional
-    public ApplicationRecordResponse updateDocumentReference(UUID id, UpdateDocumentReferenceRequest request) {
-        ApplicationRecord record = repository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Application not found with id: " + id));
+    public ApplicationRecordResponse updateDocumentReference(
+            String ownerId,
+            UUID id,
+            UpdateDocumentReferenceRequest request) {
+        ApplicationRecord record = findOwnedApplication(ownerId, id);
         if (record.getStatus() != ApplicationStatus.DOCUMENTS_GENERATED) {
             throw new InvalidStatusException("Documents cannot be replaced after the application has been marked as applied.");
         }
@@ -146,41 +150,34 @@ public class ApplicationRecordService {
             throw new InvalidStatusException("Invalid documentType: " + request.getDocumentType());
         }
         ApplicationRecord updated = repository.save(record);
-        log.info("Application document reference updated applicationId={} documentType={} documentId={}",
-                id,
-                documentType,
-                request.getDocumentId());
+        log.info("Owner-scoped application document reference updated documentType={}",
+                documentType);
         return mapToResponse(updated);
     }
 
     @Transactional
-    public void deleteApplication(UUID id) {
-        if (!repository.existsById(id)) {
-            throw new ResourceNotFoundException("Application not found with id: " + id);
-        }
-        repository.deleteById(id);
+    public void deleteApplication(String ownerId, UUID id) {
+        ApplicationRecord record = findOwnedApplication(ownerId, id);
+        repository.delete(record);
     }
 
     @Transactional
-    public WithdrawGeneratedApplicationResponse withdrawGeneratedApplication(UUID id) {
+    public WithdrawGeneratedApplicationResponse withdrawGeneratedApplication(
+            String ownerId,
+            UUID id,
+            String authorization) {
         long startedAt = System.nanoTime();
-        ApplicationRecord record = repository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Application not found with id: " + id));
+        ApplicationRecord record = findOwnedApplication(ownerId, id);
 
         if (record.getStatus() != ApplicationStatus.DOCUMENTS_GENERATED) {
-            log.warn("Invalid generated application withdraw applicationId={} userId={} status={}",
-                    id,
-                    record.getUserId(),
+            log.warn("Invalid owner-scoped generated application withdraw status={}",
                     record.getStatus());
             throw new InvalidStatusException("Generated application can only be withdrawn before applying");
         }
 
-        deactivateApplicationDocuments(id);
+        deactivateApplicationDocuments(id, authorization);
         repository.delete(record);
-        log.info("Generated application withdrawn applicationId={} userId={} jobId={} durationMs={}",
-                id,
-                record.getUserId(),
-                record.getJobId(),
+        log.info("Owner-scoped generated application withdrawn durationMs={}",
                 (System.nanoTime() - startedAt) / 1_000_000);
         return WithdrawGeneratedApplicationResponse.builder()
                 .applicationId(id)
@@ -210,21 +207,30 @@ public class ApplicationRecordService {
                 .build();
     }
 
-    private void deactivateApplicationDocuments(UUID applicationId) {
+    private void deactivateApplicationDocuments(UUID applicationId, String authorization) {
         if (documentStoreBaseUrl == null || documentStoreBaseUrl.isBlank()) {
             return;
         }
         try {
-            restTemplate.postForEntity(
+            HttpHeaders headers = new HttpHeaders();
+            if (StringUtils.hasText(authorization)) {
+                headers.set(HttpHeaders.AUTHORIZATION, authorization);
+            }
+            restTemplate.exchange(
                     documentStoreBaseUrl + "/api/v1/documents/applications/{applicationId}/deactivate",
-                    null,
+                    HttpMethod.POST,
+                    new HttpEntity<>(headers),
                     Void.class,
                     applicationId.toString());
         } catch (RestClientException exception) {
-            log.warn("Document deactivation failed during generated application withdraw applicationId={} error={}",
-                    applicationId,
+            log.warn("Document deactivation failed during generated application withdraw error={}",
                     exception.getClass().getSimpleName());
         }
+    }
+
+    private ApplicationRecord findOwnedApplication(String ownerId, UUID id) {
+        return repository.findByIdAndUserId(id, ownerId)
+                .orElseThrow(ResourceNotFoundException::applicationNotFound);
     }
 
     private String firstNonBlank(String preferred, String fallback) {
