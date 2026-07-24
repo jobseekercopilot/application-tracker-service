@@ -23,3 +23,24 @@ binary or a separately edited specification.
 
 The default test mode compares the generated runtime document with the tracked
 contract as JSON and fails CI on semantic drift.
+
+## Versioning and compatibility
+
+The OpenAPI `info.version` follows semantic versioning:
+
+- patch: documentation or schema clarification that does not change runtime
+  compatibility;
+- minor: backward-compatible operations, fields or response definitions;
+- major: removed or renamed operations/fields, narrowed values, changed
+  authentication, or any other consumer-breaking change.
+
+The owner-scoped list contract is version `1.1.0`. It explicitly defines its
+service-token/Bearer alternatives, success model, stable `401`, `403` and `404`
+error models, and the application fields guaranteed by the producer.
+`ApplicationContractPolicyTest` fails closed if that consumer boundary is
+weakened accidentally.
+
+Breaking changes require an explicit producer review, a major version, and a
+coordinated consumer release. Rollback restores the previous tracked contract
+and compatible producer implementation together; consumers continue using
+their last reviewed immutable producer revision.

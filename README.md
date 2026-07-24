@@ -28,6 +28,10 @@ on semantic drift. See [`contracts/README.md`](contracts/README.md) for the
 reviewed update and consumer-pinning process. The Docker build runs the same
 clean verification before packaging.
 
+The version `1.1.0` owner-scoped list operation explicitly publishes the
+generated response model and stable authentication, authorization and
+owner-mismatch error schemas used by read-only consumers such as Job Matching.
+
 ## Security boundary
 
 Every public application request is authenticated. User requests require an
