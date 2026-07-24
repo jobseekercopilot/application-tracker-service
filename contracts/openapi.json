@@ -9,7 +9,7 @@
     "license" : {
       "name" : "Proprietary and confidential"
     },
-    "version" : "1.0.0"
+    "version" : "1.1.0"
   },
   "servers" : [ {
     "url" : "http://localhost:8088",
@@ -388,15 +388,45 @@
           }
         } ],
         "responses" : {
-          "200" : {
-            "description" : "List of application records for the user",
+          "403" : {
+            "description" : "Authenticated identity lacks reader permission",
             "content" : {
-              "*/*" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SecurityErrorResponse"
+                }
+              }
+            }
+          },
+          "401" : {
+            "description" : "Missing, invalid or ambiguous authentication",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SecurityErrorResponse"
+                }
+              }
+            }
+          },
+          "200" : {
+            "description" : "Owner-scoped application records",
+            "content" : {
+              "application/json" : {
                 "schema" : {
                   "type" : "array",
                   "items" : {
                     "$ref" : "#/components/schemas/ApplicationRecordResponse"
                   }
+                }
+              }
+            }
+          },
+          "404" : {
+            "description" : "Bearer subject and requested owner do not match",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -645,6 +675,7 @@
         "description" : "Request to create a new application record"
       },
       "ApplicationRecordResponse" : {
+        "required" : [ "canonicalJobId", "companyName", "coverLetterDocumentId", "createdAt", "cvDocumentId", "externalJobId", "id", "jobId", "jobTitle", "provider", "status", "updatedAt", "userId" ],
         "type" : "object",
         "properties" : {
           "id" : {
@@ -774,6 +805,42 @@
           },
           "documentId" : {
             "type" : "string"
+          }
+        }
+      },
+      "SecurityErrorResponse" : {
+        "required" : [ "code", "message" ],
+        "type" : "object",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "message" : {
+            "type" : "string"
+          }
+        },
+        "description" : "Stable redacted authentication or authorization error"
+      },
+      "ErrorResponse" : {
+        "required" : [ "message", "status", "timestamp" ],
+        "type" : "object",
+        "properties" : {
+          "status" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "timestamp" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "errors" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string"
+            }
           }
         }
       }

@@ -26,6 +26,10 @@ enablement or represent a durable, access-controlled source of truth.
   repository queries and stable non-enumerating denial responses. The clean
   build passes 32 tests, including forged and invalid token cases, cross-user
   record/document/list/mutation attempts and least-privilege service access.
+- MATCH-02 producer preparation versions the owner-scoped list contract as
+  `1.1.0` and makes its guaranteed fields plus `401`, `403` and `404` models
+  explicit. A focused policy test prevents that consumer boundary from
+  silently weakening.
 
 ## Critical findings
 

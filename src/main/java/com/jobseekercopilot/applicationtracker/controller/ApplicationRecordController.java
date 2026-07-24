@@ -5,10 +5,13 @@ import com.jobseekercopilot.applicationtracker.dto.CreateApplicationRequest;
 import com.jobseekercopilot.applicationtracker.dto.UpdateStatusRequest;
 import com.jobseekercopilot.applicationtracker.dto.UpdateDocumentReferenceRequest;
 import com.jobseekercopilot.applicationtracker.dto.WithdrawGeneratedApplicationResponse;
+import com.jobseekercopilot.applicationtracker.exception.ErrorResponse;
+import com.jobseekercopilot.applicationtracker.exception.SecurityErrorResponse;
 import com.jobseekercopilot.applicationtracker.security.ApplicationOwnerResolver;
 import com.jobseekercopilot.applicationtracker.service.ApplicationRecordService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -19,6 +22,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -78,12 +82,36 @@ public class ApplicationRecordController {
         return ResponseEntity.ok(response);
     }
 
-    @GetMapping("/user/{userId}")
+    @GetMapping(value = "/user/{userId}", produces = MediaType.APPLICATION_JSON_VALUE)
     @Operation(summary = "Get applications by user ID")
     @SecurityRequirement(name = "bearerAuth")
     @SecurityRequirement(name = "serviceToken")
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "List of application records for the user")
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Owner-scoped application records",
+                    content = @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            array = @ArraySchema(
+                                    schema = @Schema(implementation = ApplicationRecordResponse.class)))),
+            @ApiResponse(
+                    responseCode = "401",
+                    description = "Missing, invalid or ambiguous authentication",
+                    content = @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = SecurityErrorResponse.class))),
+            @ApiResponse(
+                    responseCode = "403",
+                    description = "Authenticated identity lacks reader permission",
+                    content = @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = SecurityErrorResponse.class))),
+            @ApiResponse(
+                    responseCode = "404",
+                    description = "Bearer subject and requested owner do not match",
+                    content = @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = ErrorResponse.class)))
     })
     public ResponseEntity<List<ApplicationRecordResponse>> getApplicationsForUser(
             @Parameter(description = "User ID to retrieve applications for") @PathVariable String userId,
