@@ -6,6 +6,10 @@ status and generated-document reference model.
 This repository is a sanitised audit baseline, not a beta-ready application
 tracking system. See [`docs/BETA_READINESS_AUDIT.md`](docs/BETA_READINESS_AUDIT.md).
 
+Its ownership boundary with Job Search and Job Matching is defined in the
+Infrastructure
+[Job Search architecture ADR](https://github.com/jobseekercopilot/infrastructure/blob/develop/docs/adr/0001-job-search-architecture-and-ownership.md).
+
 ## Build
 
 Java 17 and Maven are required.
