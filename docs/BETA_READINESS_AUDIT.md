@@ -30,6 +30,10 @@ enablement or represent a durable, access-controlled source of truth.
   `1.1.0` and makes its guaranteed fields plus `401`, `403` and `404` models
   explicit. A focused policy test prevents that consumer boundary from
   silently weakening.
+- APP-11 hardens the System Data producer contract as `2.0.0`: only an explicit
+  E2E runtime can use its independent identity; seed uses constrained DTOs; and
+  deterministic seed, reset and verification are owner-and-scenario scoped.
+  System Data and Infrastructure rollout remain required before integrated use.
 
 ## Critical findings
 
@@ -75,12 +79,14 @@ deletes the application, and is followed by a second best-effort hard delete in
 Job Finder Gateway. Failures can leave orphaned documents, missing references or
 an application state that cannot be reconciled.
 
-### Unsafe deletion and environment-data control
+### Unsafe user deletion; System Data boundary implemented, rollout incomplete
 
 The unrestricted delete endpoint permanently removes application history without
-an archive, retention or dependent-document policy. System Data can seed arbitrary
-entity graphs when enabled; allowed environments include `default`, and there is
-no service authentication.
+an archive, retention or dependent-document policy. APP-11 removes raw entity
+fixture writes and owner-wide reset/verification, rejects default/unknown/mixed
+profiles and retains the independent APP-03 identity. The producer is intentionally
+incompatible with the old System Data caller; that consumer and the E2E
+Infrastructure profile must adopt `2.0.0` before this blocker can close.
 
 ### Query, privacy and operational limits
 

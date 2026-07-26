@@ -15,9 +15,9 @@ public interface ApplicationRecordRepository extends JpaRepository<ApplicationRe
 
     List<ApplicationRecord> findByUserId(String userId);
 
-    Optional<ApplicationRecord> findByIdAndUserId(UUID id, String userId);
+    List<ApplicationRecord> findByUserIdAndFixtureScenarioId(String userId, String fixtureScenarioId);
 
-    void deleteByUserId(String userId);
+    Optional<ApplicationRecord> findByIdAndUserId(UUID id, String userId);
 
     @Query("""
             select record

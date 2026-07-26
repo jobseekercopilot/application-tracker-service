@@ -34,7 +34,12 @@ The OpenAPI `info.version` follows semantic versioning:
 - major: removed or renamed operations/fields, narrowed values, changed
   authentication, or any other consumer-breaking change.
 
-The owner-scoped list contract is version `1.1.0`. It explicitly defines its
+The contract is version `2.0.0`. It retains the explicitly defined owner-scoped
+list boundary from `1.1.0` and replaces raw-entity, owner-wide System Data
+operations with a constrained versioned seed request and scenario-scoped
+seed/reset/verify operations.
+
+The owner-scoped list operation explicitly defines its
 service-token/Bearer alternatives, success model, stable `401`, `403` and `404`
 error models, and the application fields guaranteed by the producer.
 `ApplicationContractPolicyTest` fails closed if that consumer boundary is

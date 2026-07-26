@@ -28,7 +28,10 @@ on semantic drift. See [`contracts/README.md`](contracts/README.md) for the
 reviewed update and consumer-pinning process. The Docker build runs the same
 clean verification before packaging.
 
-The version `1.1.0` owner-scoped list operation explicitly publishes the
+The version `2.0.0` contract retains the owner-scoped public list operation and
+replaces the unsafe raw-entity System Data routes with a constrained,
+versioned, owner-and-scenario-scoped fixture boundary. The list operation
+explicitly publishes the
 generated response model and stable authentication, authorization and
 owner-mismatch error schemas used by read-only consumers such as Job Matching.
 
@@ -39,10 +42,12 @@ RS256 Bearer access token and derive ownership only from JWT `sub`. Approved
 backend callers use distinct runtime-injected producer or reader credentials
 with least-privilege routes and explicit owner context. System Data uses a
 third independent credential and remains disabled unless explicitly enabled in
-an allowed non-production environment.
+the single explicit `e2e` profile.
 
 See [`docs/SECURITY_BOUNDARY.md`](docs/SECURITY_BOUNDARY.md) for the claims,
 authorization matrix, denial semantics, configuration and rollout contract.
+See [`docs/SYSTEM_DATA_BOUNDARY.md`](docs/SYSTEM_DATA_BOUNDARY.md) for the
+versioned fixture schema, scenario isolation rules and operational runbook.
 
 | Environment variable | Purpose |
 | --- | --- |
@@ -52,6 +57,8 @@ authorization matrix, denial semantics, configuration and rollout contract.
 | `APPLICATION_TRACKER_PRODUCER_TOKEN` | Create/read/document-link service identity |
 | `APPLICATION_TRACKER_READER_TOKEN` | Read-only service identity |
 | `ENVIRONMENT_DATA_TOKEN` | Independent non-production fixture identity |
+| `ENVIRONMENT_DATA_ENABLED` | Must be `true` to enable fixture operations |
+| `ENVIRONMENT_DATA_ALLOWED_ENVIRONMENTS` | Must contain exactly `e2e` |
 
 All three service credentials must contain at least 32 bytes, must be distinct
 and must be supplied at runtime. Do not put real values in source, examples,
