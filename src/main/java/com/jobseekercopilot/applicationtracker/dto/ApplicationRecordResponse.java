@@ -80,6 +80,21 @@ public class ApplicationRecordResponse {
             requiredMode = Schema.RequiredMode.REQUIRED)
     private String coverLetterDocumentId;
 
+    @Schema(description = "Current approved CV selected before application submission")
+    private DocumentVersionReference cvDocumentReference;
+
+    @Schema(description = "Current approved cover letter selected before application submission")
+    private DocumentVersionReference coverLetterDocumentReference;
+
+    @Schema(description = "Frozen CV version used when this application first progressed")
+    private DocumentVersionReference applicationUsedCvDocumentReference;
+
+    @Schema(description = "Frozen cover-letter version used when this application first progressed")
+    private DocumentVersionReference applicationUsedCoverLetterDocumentReference;
+
+    @Schema(description = "Timestamp when application-used references were frozen")
+    private LocalDateTime applicationUsedAt;
+
     @Schema(
             description = "Current application status",
             example = "DOCUMENTS_GENERATED",

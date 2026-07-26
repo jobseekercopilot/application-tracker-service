@@ -3,15 +3,22 @@ package com.jobseekercopilot.applicationtracker.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jobseekercopilot.applicationtracker.TestJwksServer;
 import com.jobseekercopilot.applicationtracker.dto.CreateApplicationRequest;
+import com.jobseekercopilot.applicationtracker.dto.DocumentType;
+import com.jobseekercopilot.applicationtracker.dto.DocumentVersionReference;
 import com.jobseekercopilot.applicationtracker.dto.UpdateStatusRequest;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationRecord;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationStatus;
+import com.jobseekercopilot.applicationtracker.exception.DocumentReferenceUnavailableException;
+import com.jobseekercopilot.applicationtracker.exception.InvalidDocumentReferenceException;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationRecordRepository;
+import com.jobseekercopilot.applicationtracker.service.DocumentReferenceVerifier;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -27,12 +34,19 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.when;
 
 @SpringBootTest
 @AutoConfigureMockMvc
 class ApplicationRecordControllerIntegrationTest {
 
     private static final TestJwksServer JWKS = new TestJwksServer();
+    private static final UUID CV_ID =
+            UUID.fromString("11111111-1111-4111-8111-111111111111");
+    private static final UUID COVER_LETTER_ID =
+            UUID.fromString("22222222-2222-4222-8222-222222222222");
 
     @DynamicPropertySource
     static void jwtProperties(DynamicPropertyRegistry registry) {
@@ -55,6 +69,23 @@ class ApplicationRecordControllerIntegrationTest {
     @Autowired
     private ApplicationRecordRepository repository;
 
+    @MockBean
+    private DocumentReferenceVerifier documentReferenceVerifier;
+
+    @BeforeEach
+    void setUp() {
+        repository.deleteAll();
+        when(documentReferenceVerifier.verify(
+                        anyString(),
+                        any(UUID.class),
+                        anyString(),
+                        any(DocumentType.class)))
+                .thenAnswer(invocation -> reference(
+                        invocation.getArgument(1),
+                        invocation.getArgument(2),
+                        invocation.getArgument(3)));
+    }
+
     @Test
     void createApplication_ShouldReturn201() throws Exception {
         CreateApplicationRequest request = CreateApplicationRequest.builder()
@@ -62,8 +93,8 @@ class ApplicationRecordControllerIntegrationTest {
                 .jobId("job-456")
                 .jobTitle("Java Developer")
                 .companyName("Example Ltd")
-                .cvDocumentId("cv-123")
-                .coverLetterDocumentId("cl-456")
+                .cvDocumentId(CV_ID)
+                .coverLetterDocumentId(COVER_LETTER_ID)
                 .build();
 
         mockMvc.perform(post("/api/v1/applications")
@@ -94,14 +125,54 @@ class ApplicationRecordControllerIntegrationTest {
     }
 
     @Test
+    void createApplication_WithIneligibleDocument_ShouldReturn400WithoutWriting()
+            throws Exception {
+        when(documentReferenceVerifier.verify(
+                        "user-123", CV_ID, "job-456", DocumentType.CV))
+                .thenThrow(new InvalidDocumentReferenceException());
+
+        mockMvc.perform(post("/api/v1/applications")
+                        .header(HttpHeaders.AUTHORIZATION, authorization("user-123"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validRequest())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message")
+                        .value("Document reference is not eligible for this application."));
+        org.junit.jupiter.api.Assertions.assertEquals(0, repository.count());
+    }
+
+    @Test
+    void createApplication_WhenDocumentStoreUnavailable_ShouldReturn503WithoutWriting()
+            throws Exception {
+        when(documentReferenceVerifier.verify(
+                        "user-123", CV_ID, "job-456", DocumentType.CV))
+                .thenThrow(new DocumentReferenceUnavailableException());
+
+        mockMvc.perform(post("/api/v1/applications")
+                        .header(HttpHeaders.AUTHORIZATION, authorization("user-123"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validRequest())))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.message")
+                        .value("Document reference validation is temporarily unavailable."));
+        org.junit.jupiter.api.Assertions.assertEquals(0, repository.count());
+    }
+
+    @Test
     void getApplicationById_WhenExists_ShouldReturn200() throws Exception {
         ApplicationRecord saved = repository.save(ApplicationRecord.builder()
                 .userId("user-123")
                 .jobId("job-456")
                 .jobTitle("Java Developer")
                 .companyName("Example Ltd")
-                .cvDocumentId("cv-123")
-                .coverLetterDocumentId("cl-456")
+                .cvDocumentId(CV_ID.toString())
+                .cvDocumentFamilyId(CV_ID.toString())
+                .cvDocumentVersion(1)
+                .cvDocumentContentSha256("a".repeat(64))
+                .coverLetterDocumentId(COVER_LETTER_ID.toString())
+                .coverLetterDocumentFamilyId(COVER_LETTER_ID.toString())
+                .coverLetterDocumentVersion(1)
+                .coverLetterDocumentContentSha256("b".repeat(64))
                 .status(ApplicationStatus.DOCUMENTS_GENERATED)
                 .build());
 
@@ -173,8 +244,14 @@ class ApplicationRecordControllerIntegrationTest {
                 .jobId("job-456")
                 .jobTitle("Java Developer")
                 .companyName("Example Ltd")
-                .cvDocumentId("cv-123")
-                .coverLetterDocumentId("cl-456")
+                .cvDocumentId(CV_ID.toString())
+                .cvDocumentFamilyId(CV_ID.toString())
+                .cvDocumentVersion(1)
+                .cvDocumentContentSha256("a".repeat(64))
+                .coverLetterDocumentId(COVER_LETTER_ID.toString())
+                .coverLetterDocumentFamilyId(COVER_LETTER_ID.toString())
+                .coverLetterDocumentVersion(1)
+                .coverLetterDocumentContentSha256("b".repeat(64))
                 .status(ApplicationStatus.DOCUMENTS_GENERATED)
                 .build());
 
@@ -188,8 +265,13 @@ class ApplicationRecordControllerIntegrationTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("APPLIED"))
-                .andExpect(jsonPath("$.cvDocumentId").value("cv-123"))
-                .andExpect(jsonPath("$.coverLetterDocumentId").value("cl-456"))
+                .andExpect(jsonPath("$.cvDocumentId").value(CV_ID.toString()))
+                .andExpect(jsonPath("$.coverLetterDocumentId")
+                        .value(COVER_LETTER_ID.toString()))
+                .andExpect(jsonPath("$.applicationUsedCvDocumentReference.documentId")
+                        .value(CV_ID.toString()))
+                .andExpect(jsonPath("$.applicationUsedCoverLetterDocumentReference.documentId")
+                        .value(COVER_LETTER_ID.toString()))
                 .andExpect(jsonPath("$.appliedAt").isNotEmpty());
     }
 
@@ -281,5 +363,29 @@ class ApplicationRecordControllerIntegrationTest {
 
     private static String authorization(String subject) {
         return "Bearer " + JWKS.validToken(subject);
+    }
+
+    private DocumentVersionReference reference(
+            UUID id, String jobId, DocumentType type) {
+        return DocumentVersionReference.builder()
+                .documentId(id)
+                .documentFamilyId(id)
+                .jobId(jobId)
+                .documentType(type)
+                .version(1)
+                .contentSha256(
+                        type == DocumentType.CV ? "a".repeat(64) : "b".repeat(64))
+                .build();
+    }
+
+    private CreateApplicationRequest validRequest() {
+        return CreateApplicationRequest.builder()
+                .userId("user-123")
+                .jobId("job-456")
+                .jobTitle("Java Developer")
+                .companyName("Example Ltd")
+                .cvDocumentId(CV_ID)
+                .coverLetterDocumentId(COVER_LETTER_ID)
+                .build();
     }
 }

@@ -45,3 +45,4 @@ application-tracker:
 services:
   document-store-service:
     base-url: ${DOCUMENT_STORE_SERVICE_URL:http://document-store-service:8089}
+    reader-token: ${DOCUMENT_STORE_READER_TOKEN:}
