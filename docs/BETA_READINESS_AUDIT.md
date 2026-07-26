@@ -43,12 +43,16 @@ a beta blocker until Job Finder, CV/cover-letter, document generation, Job
 Matching, Reporting and Infrastructure adopt those credentials and owner
 semantics and the integrated journeys pass.
 
-### Non-durable database and schema
+### Durable repository storage implemented; deployed recovery evidence incomplete
 
-The default database is in-memory H2 with an enabled console,
-`ddl-auto=create-drop` and SQL logging. All application history is lost on restart.
-There are no versioned migrations, production database configuration, backup and
-restore evidence, encryption decision, indexes, row-versioning or recovery test.
+APP-04 replaces the non-test in-memory database with PostgreSQL, introduces
+forward-only Flyway migrations, makes Hibernate validate-only, disables the H2
+console and SQL logging, and adds real PostgreSQL migration, upgrade, restart,
+backup and restore evidence. Production configuration fails closed unless
+verified TLS plus managed database/backup encryption references are declared.
+Infrastructure must still provide the private managed database, secret
+injection, automated encrypted recovery points and a deployed restore drill
+before this service can be enabled for beta. Row-versioning remains APP-06.
 
 ### No valid lifecycle or immutable history
 
@@ -116,7 +120,7 @@ journeys.
 | Withdrawal/deletion | Unsafe; best-effort cleanup and permanent removal |
 | Manual/external application capture | Absent |
 | Search/filter/pagination | Absent |
-| Durable storage/migrations | Absent but required |
+| Durable storage/migrations | Repository implementation complete; AWS deployment/restore evidence pending |
 | Observability/operations | Basic request logs and health only |
 
 The Application Tracking epic contains focused follow-up issues. APP-02 is the
