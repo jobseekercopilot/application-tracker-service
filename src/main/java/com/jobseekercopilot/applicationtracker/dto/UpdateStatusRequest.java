@@ -2,6 +2,7 @@ package com.jobseekercopilot.applicationtracker.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.PositiveOrZero;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -31,4 +32,12 @@ public class UpdateStatusRequest {
             requiredMode = Schema.RequiredMode.REQUIRED
     )
     private String status;
+
+    @PositiveOrZero(message = "expectedVersion must be zero or greater")
+    @Schema(
+            description = "Optional record version last observed by the caller; stale values return HTTP 409",
+            example = "3",
+            minimum = "0"
+    )
+    private Long expectedVersion;
 }

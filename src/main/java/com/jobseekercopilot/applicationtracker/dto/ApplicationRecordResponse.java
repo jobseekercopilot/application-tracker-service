@@ -98,4 +98,10 @@ public class ApplicationRecordResponse {
 
     @Schema(description = "Timestamp when the application was submitted (null if not yet applied)")
     private LocalDateTime appliedAt;
+
+    @Schema(
+            description = "Monotonic record version for optimistic concurrency",
+            example = "3",
+            requiredMode = Schema.RequiredMode.REQUIRED)
+    private long version;
 }

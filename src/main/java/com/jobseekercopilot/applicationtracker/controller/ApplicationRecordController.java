@@ -141,13 +141,37 @@ public class ApplicationRecordController {
         return ResponseEntity.ok(response);
     }
 
-    @PatchMapping("/{id}/status")
+    @PatchMapping(
+            value = "/{id}/status",
+            consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE)
     @Operation(summary = "Update application status")
     @SecurityRequirement(name = "bearerAuth")
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "Status updated successfully"),
-            @ApiResponse(responseCode = "400", description = "Invalid status value"),
-            @ApiResponse(responseCode = "404", description = "Application record not found")
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Status updated successfully",
+                    content = @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = ApplicationRecordResponse.class))),
+            @ApiResponse(
+                    responseCode = "400",
+                    description = "Invalid status value",
+                    content = @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(
+                    responseCode = "409",
+                    description = "Invalid lifecycle transition or stale/concurrent record version",
+                    content = @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(
+                    responseCode = "404",
+                    description = "Application record not found",
+                    content = @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = ErrorResponse.class)))
     })
     public ResponseEntity<ApplicationRecordResponse> updateStatus(
             @Parameter(description = "UUID of the application record") @PathVariable UUID id,

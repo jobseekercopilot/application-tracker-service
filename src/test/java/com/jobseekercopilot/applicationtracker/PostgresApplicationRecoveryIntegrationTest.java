@@ -51,7 +51,7 @@ class PostgresApplicationRecoveryIntegrationTest {
                         assertThat(((SQLException) error).getSQLState()).startsWith("28"));
 
         Flyway upgraded = flyway(POSTGRES.getJdbcUrl());
-        assertThat(upgraded.migrate().migrationsExecuted).isEqualTo(2);
+        assertThat(upgraded.migrate().migrationsExecuted).isEqualTo(3);
         upgraded.validate();
 
         try (Connection connection = primaryConnection()) {
@@ -188,7 +188,7 @@ class PostgresApplicationRecoveryIntegrationTest {
             throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
                 SELECT job_id, canonical_job_id, provider, external_job_id,
-                       fixture_scenario_id
+                       fixture_scenario_id, record_version
                 FROM application_records
                 WHERE id = ?
                 """)) {
@@ -203,6 +203,7 @@ class PostgresApplicationRecoveryIntegrationTest {
                 assertThat(result.getString("external_job_id"))
                         .isEqualTo("synthetic-legacy-job");
                 assertThat(result.getString("fixture_scenario_id")).isNull();
+                assertThat(result.getLong("record_version")).isZero();
             }
         }
     }

@@ -9,7 +9,7 @@
     "license" : {
       "name" : "Proprietary and confidential"
     },
-    "version" : "1.1.0"
+    "version" : "1.2.0"
   },
   "servers" : [ {
     "url" : "http://localhost:8088",
@@ -178,22 +178,22 @@
           "required" : true
         },
         "responses" : {
-          "200" : {
-            "description" : "Status updated successfully",
+          "400" : {
+            "description" : "Invalid status value",
             "content" : {
-              "*/*" : {
+              "application/json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ApplicationRecordResponse"
+                  "$ref" : "#/components/schemas/ErrorResponse"
                 }
               }
             }
           },
-          "400" : {
-            "description" : "Invalid status value",
+          "409" : {
+            "description" : "Invalid lifecycle transition or stale/concurrent record version",
             "content" : {
-              "*/*" : {
+              "application/json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ApplicationRecordResponse"
+                  "$ref" : "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -201,7 +201,17 @@
           "404" : {
             "description" : "Application record not found",
             "content" : {
-              "*/*" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200" : {
+            "description" : "Status updated successfully",
+            "content" : {
+              "application/json" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/ApplicationRecordResponse"
                 }
@@ -388,12 +398,15 @@
           }
         } ],
         "responses" : {
-          "403" : {
-            "description" : "Authenticated identity lacks reader permission",
+          "200" : {
+            "description" : "Owner-scoped application records",
             "content" : {
               "application/json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/SecurityErrorResponse"
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/ApplicationRecordResponse"
+                  }
                 }
               }
             }
@@ -408,25 +421,22 @@
               }
             }
           },
-          "200" : {
-            "description" : "Owner-scoped application records",
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "type" : "array",
-                  "items" : {
-                    "$ref" : "#/components/schemas/ApplicationRecordResponse"
-                  }
-                }
-              }
-            }
-          },
           "404" : {
             "description" : "Bearer subject and requested owner do not match",
             "content" : {
               "application/json" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403" : {
+            "description" : "Authenticated identity lacks reader permission",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SecurityErrorResponse"
                 }
               }
             }
@@ -581,6 +591,10 @@
           "appliedAt" : {
             "type" : "string",
             "format" : "date-time"
+          },
+          "version" : {
+            "type" : "integer",
+            "format" : "int64"
           }
         }
       },
@@ -675,7 +689,7 @@
         "description" : "Request to create a new application record"
       },
       "ApplicationRecordResponse" : {
-        "required" : [ "canonicalJobId", "companyName", "coverLetterDocumentId", "createdAt", "cvDocumentId", "externalJobId", "id", "jobId", "jobTitle", "provider", "status", "updatedAt", "userId" ],
+        "required" : [ "canonicalJobId", "companyName", "coverLetterDocumentId", "createdAt", "cvDocumentId", "externalJobId", "id", "jobId", "jobTitle", "provider", "status", "updatedAt", "userId", "version" ],
         "type" : "object",
         "properties" : {
           "id" : {
@@ -754,6 +768,12 @@
             "type" : "string",
             "description" : "Timestamp when the application was submitted (null if not yet applied)",
             "format" : "date-time"
+          },
+          "version" : {
+            "type" : "integer",
+            "description" : "Monotonic record version for optimistic concurrency",
+            "format" : "int64",
+            "example" : 3
           }
         },
         "description" : "Response containing application record details"
@@ -792,9 +812,39 @@
             "description" : "New status value",
             "example" : "APPLIED",
             "enum" : [ "DOCUMENTS_GENERATED", "APPLIED", "INTERVIEW", "UNSUCCESSFUL", "OFFER", "ACCEPTED", "REJECTED_BY_USER", "WITHDRAWN" ]
+          },
+          "expectedVersion" : {
+            "minimum" : 0,
+            "type" : "integer",
+            "description" : "Optional record version last observed by the caller; stale values return HTTP 409",
+            "format" : "int64",
+            "example" : 3
           }
         },
         "description" : "Request to update the status of an application"
+      },
+      "ErrorResponse" : {
+        "required" : [ "message", "status", "timestamp" ],
+        "type" : "object",
+        "properties" : {
+          "status" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "timestamp" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "errors" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string"
+            }
+          }
+        }
       },
       "UpdateDocumentReferenceRequest" : {
         "required" : [ "documentId", "documentType" ],
@@ -820,29 +870,6 @@
           }
         },
         "description" : "Stable redacted authentication or authorization error"
-      },
-      "ErrorResponse" : {
-        "required" : [ "message", "status", "timestamp" ],
-        "type" : "object",
-        "properties" : {
-          "status" : {
-            "type" : "integer",
-            "format" : "int32"
-          },
-          "message" : {
-            "type" : "string"
-          },
-          "timestamp" : {
-            "type" : "string",
-            "format" : "date-time"
-          },
-          "errors" : {
-            "type" : "array",
-            "items" : {
-              "type" : "string"
-            }
-          }
-        }
       }
     },
     "securitySchemes" : {

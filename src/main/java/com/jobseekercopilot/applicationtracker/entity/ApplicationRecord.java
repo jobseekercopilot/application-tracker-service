@@ -8,6 +8,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -66,6 +67,10 @@ public class ApplicationRecord {
     private LocalDateTime updatedAt;
 
     private LocalDateTime appliedAt;
+
+    @Version
+    @Column(name = "record_version", nullable = false)
+    private long version;
 
     @PrePersist
     protected void onCreate() {

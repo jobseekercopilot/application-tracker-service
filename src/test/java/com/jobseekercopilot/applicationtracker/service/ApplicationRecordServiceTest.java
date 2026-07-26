@@ -181,7 +181,8 @@ class ApplicationRecordServiceTest {
                 .build();
 
         when(repository.findByIdAndUserId(id, "user-123")).thenReturn(Optional.of(record));
-        when(repository.save(any(ApplicationRecord.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(repository.saveAndFlush(any(ApplicationRecord.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
 
         ApplicationRecordResponse response = service.updateStatus("user-123", id, request);
 
@@ -214,7 +215,8 @@ class ApplicationRecordServiceTest {
                 .build();
 
         when(repository.findByIdAndUserId(id, "user-123")).thenReturn(Optional.of(record));
-        when(repository.save(any(ApplicationRecord.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(repository.saveAndFlush(any(ApplicationRecord.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
 
         ApplicationRecordResponse response = service.updateStatus("user-123", id, request);
 

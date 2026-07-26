@@ -34,11 +34,14 @@ The OpenAPI `info.version` follows semantic versioning:
 - major: removed or renamed operations/fields, narrowed values, changed
   authentication, or any other consumer-breaking change.
 
-The owner-scoped list contract is version `1.1.0`. It explicitly defines its
+The version `1.2.0` contract retains the owner-scoped list operation's explicit
 service-token/Bearer alternatives, success model, stable `401`, `403` and `404`
-error models, and the application fields guaranteed by the producer.
-`ApplicationContractPolicyTest` fails closed if that consumer boundary is
-weakened accidentally.
+error models, and guaranteed application fields. It also adds the required
+response `version`, optional request `expectedVersion`, and stable `409` model
+for status-transition conflicts. These are backwards-compatible additive
+fields; consumers can opt into deterministic stale-write protection.
+`ApplicationContractPolicyTest` fails closed if either boundary is weakened
+accidentally.
 
 Breaking changes require an explicit producer review, a major version, and a
 coordinated consumer release. Rollback restores the previous tracked contract
