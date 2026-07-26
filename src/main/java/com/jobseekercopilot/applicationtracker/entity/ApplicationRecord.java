@@ -53,8 +53,42 @@ public class ApplicationRecord {
     @Column(nullable = false)
     private String cvDocumentId;
 
+    private String cvDocumentFamilyId;
+
+    private Integer cvDocumentVersion;
+
+    @Column(length = 64)
+    private String cvDocumentContentSha256;
+
     @Column(nullable = false)
     private String coverLetterDocumentId;
+
+    private String coverLetterDocumentFamilyId;
+
+    private Integer coverLetterDocumentVersion;
+
+    @Column(length = 64)
+    private String coverLetterDocumentContentSha256;
+
+    private String applicationUsedCvDocumentId;
+
+    private String applicationUsedCvDocumentFamilyId;
+
+    private Integer applicationUsedCvDocumentVersion;
+
+    @Column(length = 64)
+    private String applicationUsedCvDocumentContentSha256;
+
+    private String applicationUsedCoverLetterDocumentId;
+
+    private String applicationUsedCoverLetterDocumentFamilyId;
+
+    private Integer applicationUsedCoverLetterDocumentVersion;
+
+    @Column(length = 64)
+    private String applicationUsedCoverLetterDocumentContentSha256;
+
+    private LocalDateTime applicationUsedAt;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)

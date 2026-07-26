@@ -2,7 +2,10 @@ package com.jobseekercopilot.applicationtracker.service;
 
 import com.jobseekercopilot.applicationtracker.dto.ApplicationRecordResponse;
 import com.jobseekercopilot.applicationtracker.dto.CreateApplicationRequest;
+import com.jobseekercopilot.applicationtracker.dto.DocumentType;
+import com.jobseekercopilot.applicationtracker.dto.DocumentVersionReference;
 import com.jobseekercopilot.applicationtracker.dto.UpdateStatusRequest;
+import com.jobseekercopilot.applicationtracker.dto.UpdateDocumentReferenceRequest;
 import com.jobseekercopilot.applicationtracker.dto.WithdrawGeneratedApplicationResponse;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationRecord;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationStatus;
@@ -23,6 +26,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -33,11 +37,19 @@ class ApplicationRecordServiceTest {
     @Mock
     private ApplicationRecordRepository repository;
 
+    @Mock
+    private DocumentReferenceVerifier documentReferenceVerifier;
+
     private ApplicationRecordService service;
+
+    private static final UUID CV_ID =
+            UUID.fromString("11111111-1111-4111-8111-111111111111");
+    private static final UUID COVER_LETTER_ID =
+            UUID.fromString("22222222-2222-4222-8222-222222222222");
 
     @BeforeEach
     void setUp() {
-        service = new ApplicationRecordService(repository);
+        service = new ApplicationRecordService(repository, documentReferenceVerifier);
     }
 
     @Test
@@ -47,8 +59,8 @@ class ApplicationRecordServiceTest {
                 .jobId("job-456")
                 .jobTitle("Java Developer")
                 .companyName("Example Ltd")
-                .cvDocumentId("cv-123")
-                .coverLetterDocumentId("cl-456")
+                .cvDocumentId(CV_ID)
+                .coverLetterDocumentId(COVER_LETTER_ID)
                 .build();
 
         ApplicationRecord savedRecord = ApplicationRecord.builder()
@@ -57,14 +69,24 @@ class ApplicationRecordServiceTest {
                 .jobId("job-456")
                 .jobTitle("Java Developer")
                 .companyName("Example Ltd")
-                .cvDocumentId("cv-123")
-                .coverLetterDocumentId("cl-456")
+                .cvDocumentId(CV_ID.toString())
+                .coverLetterDocumentId(COVER_LETTER_ID.toString())
                 .status(ApplicationStatus.DOCUMENTS_GENERATED)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
 
-        when(repository.save(any(ApplicationRecord.class))).thenReturn(savedRecord);
+        when(documentReferenceVerifier.verify(
+                        "user-123", CV_ID, "job-456", DocumentType.CV))
+                .thenReturn(reference(CV_ID, DocumentType.CV));
+        when(documentReferenceVerifier.verify(
+                        "user-123",
+                        COVER_LETTER_ID,
+                        "job-456",
+                        DocumentType.COVER_LETTER))
+                .thenReturn(reference(COVER_LETTER_ID, DocumentType.COVER_LETTER));
+        when(repository.save(any(ApplicationRecord.class))).thenAnswer(
+                invocation -> invocation.getArgument(0));
 
         ApplicationRecordResponse response = service.createApplication("user-123", request);
 
@@ -73,8 +95,10 @@ class ApplicationRecordServiceTest {
         assertThat(response.getJobId()).isEqualTo("job-456");
         assertThat(response.getJobTitle()).isEqualTo("Java Developer");
         assertThat(response.getCompanyName()).isEqualTo("Example Ltd");
-        assertThat(response.getCvDocumentId()).isEqualTo("cv-123");
-        assertThat(response.getCoverLetterDocumentId()).isEqualTo("cl-456");
+        assertThat(response.getCvDocumentId()).isEqualTo(CV_ID.toString());
+        assertThat(response.getCoverLetterDocumentId())
+                .isEqualTo(COVER_LETTER_ID.toString());
+        assertThat(response.getCvDocumentReference().getVersion()).isEqualTo(1);
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.DOCUMENTS_GENERATED);
 
         verify(repository).save(any(ApplicationRecord.class));
@@ -89,14 +113,21 @@ class ApplicationRecordServiceTest {
                 .jobId("job-456")
                 .jobTitle("Java Developer")
                 .companyName("Example Ltd")
-                .cvDocumentId("cv-123")
-                .coverLetterDocumentId("cl-456")
+                .cvDocumentId(CV_ID.toString())
+                .cvDocumentFamilyId(CV_ID.toString())
+                .cvDocumentVersion(1)
+                .cvDocumentContentSha256("a".repeat(64))
+                .coverLetterDocumentId(COVER_LETTER_ID.toString())
+                .coverLetterDocumentFamilyId(COVER_LETTER_ID.toString())
+                .coverLetterDocumentVersion(1)
+                .coverLetterDocumentContentSha256("b".repeat(64))
                 .status(ApplicationStatus.DOCUMENTS_GENERATED)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
 
-        when(repository.findByIdAndUserId(id, "user-123")).thenReturn(Optional.of(record));
+        when(repository.findByIdAndUserId(id, "user-123"))
+                .thenReturn(Optional.of(record));
 
         ApplicationRecordResponse response = service.getApplicationById("user-123", id);
 
@@ -143,21 +174,28 @@ class ApplicationRecordServiceTest {
                 .jobId("job-456")
                 .jobTitle("Java Developer")
                 .companyName("Example Ltd")
-                .cvDocumentId("cv-123")
-                .coverLetterDocumentId("cl-456")
+                .cvDocumentId(CV_ID.toString())
+                .cvDocumentFamilyId(CV_ID.toString())
+                .cvDocumentVersion(1)
+                .cvDocumentContentSha256("a".repeat(64))
+                .coverLetterDocumentId(COVER_LETTER_ID.toString())
+                .coverLetterDocumentFamilyId(COVER_LETTER_ID.toString())
+                .coverLetterDocumentVersion(1)
+                .coverLetterDocumentContentSha256("b".repeat(64))
                 .status(ApplicationStatus.DOCUMENTS_GENERATED)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
 
-        when(repository.findByUserIdAndDocumentId("user-123", "cv-123"))
+        when(repository.findByUserIdAndDocumentId(
+                        "user-123", CV_ID.toString()))
                 .thenReturn(List.of(record));
 
         ApplicationRecordResponse response =
-                service.getApplicationByDocumentId("user-123", "cv-123");
+                service.getApplicationByDocumentId("user-123", CV_ID.toString());
 
         assertThat(response.getId()).isEqualTo(record.getId());
-        assertThat(response.getCvDocumentId()).isEqualTo("cv-123");
+        assertThat(response.getCvDocumentId()).isEqualTo(CV_ID.toString());
     }
 
     @Test
@@ -173,22 +211,34 @@ class ApplicationRecordServiceTest {
                 .jobId("job-456")
                 .jobTitle("Java Developer")
                 .companyName("Example Ltd")
-                .cvDocumentId("cv-123")
-                .coverLetterDocumentId("cl-456")
+                .cvDocumentId(CV_ID.toString())
+                .cvDocumentFamilyId(CV_ID.toString())
+                .cvDocumentVersion(1)
+                .cvDocumentContentSha256("a".repeat(64))
+                .coverLetterDocumentId(COVER_LETTER_ID.toString())
+                .coverLetterDocumentFamilyId(COVER_LETTER_ID.toString())
+                .coverLetterDocumentVersion(1)
+                .coverLetterDocumentContentSha256("b".repeat(64))
                 .status(ApplicationStatus.DOCUMENTS_GENERATED)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
 
-        when(repository.findByIdAndUserId(id, "user-123")).thenReturn(Optional.of(record));
+        when(repository.findForUpdateByIdAndUserId(id, "user-123"))
+                .thenReturn(Optional.of(record));
         when(repository.save(any(ApplicationRecord.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         ApplicationRecordResponse response = service.updateStatus("user-123", id, request);
 
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.APPLIED);
-        assertThat(response.getCvDocumentId()).isEqualTo("cv-123");
-        assertThat(response.getCoverLetterDocumentId()).isEqualTo("cl-456");
+        assertThat(response.getCvDocumentId()).isEqualTo(CV_ID.toString());
+        assertThat(response.getCoverLetterDocumentId())
+                .isEqualTo(COVER_LETTER_ID.toString());
         assertThat(response.getAppliedAt()).isNotNull();
+        assertThat(response.getApplicationUsedCvDocumentReference().getDocumentId())
+                .isEqualTo(CV_ID);
+        assertThat(response.getApplicationUsedCoverLetterDocumentReference().getDocumentId())
+                .isEqualTo(COVER_LETTER_ID);
     }
 
     @Test
@@ -205,21 +255,99 @@ class ApplicationRecordServiceTest {
                 .jobId("job-456")
                 .jobTitle("Java Developer")
                 .companyName("Example Ltd")
-                .cvDocumentId("cv-123")
-                .coverLetterDocumentId("cl-456")
+                .cvDocumentId(CV_ID.toString())
+                .cvDocumentFamilyId(CV_ID.toString())
+                .cvDocumentVersion(1)
+                .cvDocumentContentSha256("a".repeat(64))
+                .coverLetterDocumentId(COVER_LETTER_ID.toString())
+                .coverLetterDocumentFamilyId(COVER_LETTER_ID.toString())
+                .coverLetterDocumentVersion(1)
+                .coverLetterDocumentContentSha256("b".repeat(64))
                 .status(ApplicationStatus.APPLIED)
                 .appliedAt(appliedAt)
                 .createdAt(LocalDateTime.now().minusDays(3))
                 .updatedAt(LocalDateTime.now().minusDays(1))
                 .build();
 
-        when(repository.findByIdAndUserId(id, "user-123")).thenReturn(Optional.of(record));
+        when(repository.findForUpdateByIdAndUserId(id, "user-123"))
+                .thenReturn(Optional.of(record));
         when(repository.save(any(ApplicationRecord.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         ApplicationRecordResponse response = service.updateStatus("user-123", id, request);
 
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.INTERVIEW);
         assertThat(response.getAppliedAt()).isEqualTo(appliedAt);
+    }
+
+    @Test
+    void replacementBeforeProgressChangesOnlyTheCurrentCanonicalReference() {
+        UUID id = UUID.randomUUID();
+        UUID replacementId =
+                UUID.fromString("33333333-3333-4333-8333-333333333333");
+        ApplicationRecord record = canonicalRecord(id);
+        when(repository.findForUpdateByIdAndUserId(id, "user-123"))
+                .thenReturn(Optional.of(record));
+        when(documentReferenceVerifier.verify(
+                        "user-123", replacementId, "job-456", DocumentType.CV))
+                .thenReturn(DocumentVersionReference.builder()
+                        .documentId(replacementId)
+                        .documentFamilyId(CV_ID)
+                        .jobId("job-456")
+                        .documentType(DocumentType.CV)
+                        .version(2)
+                        .contentSha256("c".repeat(64))
+                        .build());
+        when(repository.save(any(ApplicationRecord.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        ApplicationRecordResponse response = service.updateDocumentReference(
+                "user-123",
+                id,
+                UpdateDocumentReferenceRequest.builder()
+                        .documentType("CV")
+                        .documentId(replacementId)
+                        .build());
+
+        assertThat(response.getCvDocumentReference().getDocumentId())
+                .isEqualTo(replacementId);
+        assertThat(response.getCvDocumentReference().getVersion()).isEqualTo(2);
+        assertThat(response.getApplicationUsedCvDocumentReference()).isNull();
+    }
+
+    @Test
+    void frozenReferencesSurviveStatusRegressionAndRejectReplacement() {
+        UUID id = UUID.randomUUID();
+        ApplicationRecord record = canonicalRecord(id);
+        when(repository.findForUpdateByIdAndUserId(id, "user-123"))
+                .thenReturn(Optional.of(record));
+        when(repository.save(any(ApplicationRecord.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.updateStatus(
+                "user-123",
+                id,
+                UpdateStatusRequest.builder().status("APPLIED").build());
+        ApplicationRecordResponse regressed = service.updateStatus(
+                "user-123",
+                id,
+                UpdateStatusRequest.builder().status("DOCUMENTS_GENERATED").build());
+
+        assertThat(regressed.getApplicationUsedCvDocumentReference().getDocumentId())
+                .isEqualTo(CV_ID);
+        assertThatThrownBy(() -> service.updateDocumentReference(
+                        "user-123",
+                        id,
+                        UpdateDocumentReferenceRequest.builder()
+                                .documentType("CV")
+                                .documentId(UUID.randomUUID())
+                                .build()))
+                .isInstanceOf(InvalidStatusException.class)
+                .hasMessageContaining("cannot be replaced");
+        verify(documentReferenceVerifier, never()).verify(
+                anyString(),
+                any(UUID.class),
+                anyString(),
+                any(DocumentType.class));
     }
 
     @Test
@@ -236,7 +364,8 @@ class ApplicationRecordServiceTest {
                 .status(ApplicationStatus.DOCUMENTS_GENERATED)
                 .build();
 
-        when(repository.findByIdAndUserId(id, "user-123")).thenReturn(Optional.of(record));
+        when(repository.findForUpdateByIdAndUserId(id, "user-123"))
+                .thenReturn(Optional.of(record));
 
         assertThatThrownBy(() -> service.updateStatus("user-123", id, request))
                 .isInstanceOf(InvalidStatusException.class)
@@ -250,7 +379,8 @@ class ApplicationRecordServiceTest {
                 .id(id)
                 .userId("user-123")
                 .build();
-        when(repository.findByIdAndUserId(id, "user-123")).thenReturn(Optional.of(record));
+        when(repository.findForUpdateByIdAndUserId(id, "user-123"))
+                .thenReturn(Optional.of(record));
 
         service.deleteApplication("user-123", id);
 
@@ -260,7 +390,8 @@ class ApplicationRecordServiceTest {
     @Test
     void deleteApplication_WhenNotExists_ShouldThrowException() {
         UUID id = UUID.randomUUID();
-        when(repository.findByIdAndUserId(id, "user-123")).thenReturn(Optional.empty());
+        when(repository.findForUpdateByIdAndUserId(id, "user-123"))
+                .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.deleteApplication("user-123", id))
                 .isInstanceOf(ResourceNotFoundException.class)
@@ -281,7 +412,8 @@ class ApplicationRecordServiceTest {
                 .status(ApplicationStatus.DOCUMENTS_GENERATED)
                 .build();
 
-        when(repository.findByIdAndUserId(id, "user-123")).thenReturn(Optional.of(record));
+        when(repository.findForUpdateByIdAndUserId(id, "user-123"))
+                .thenReturn(Optional.of(record));
 
         WithdrawGeneratedApplicationResponse response =
                 service.withdrawGeneratedApplication("user-123", id, null);
@@ -302,12 +434,46 @@ class ApplicationRecordServiceTest {
                 .status(ApplicationStatus.APPLIED)
                 .build();
 
-        when(repository.findByIdAndUserId(id, "user-123")).thenReturn(Optional.of(record));
+        when(repository.findForUpdateByIdAndUserId(id, "user-123"))
+                .thenReturn(Optional.of(record));
 
         assertThatThrownBy(() ->
                 service.withdrawGeneratedApplication("user-123", id, null))
                 .isInstanceOf(InvalidStatusException.class)
                 .hasMessageContaining("only be withdrawn before applying");
         verify(repository, never()).delete(record);
+    }
+
+    private DocumentVersionReference reference(UUID id, DocumentType type) {
+        return DocumentVersionReference.builder()
+                .documentId(id)
+                .documentFamilyId(id)
+                .jobId("job-456")
+                .documentType(type)
+                .version(1)
+                .contentSha256(
+                        type == DocumentType.CV ? "a".repeat(64) : "b".repeat(64))
+                .build();
+    }
+
+    private ApplicationRecord canonicalRecord(UUID id) {
+        return ApplicationRecord.builder()
+                .id(id)
+                .userId("user-123")
+                .jobId("job-456")
+                .jobTitle("Java Developer")
+                .companyName("Example Ltd")
+                .cvDocumentId(CV_ID.toString())
+                .cvDocumentFamilyId(CV_ID.toString())
+                .cvDocumentVersion(1)
+                .cvDocumentContentSha256("a".repeat(64))
+                .coverLetterDocumentId(COVER_LETTER_ID.toString())
+                .coverLetterDocumentFamilyId(COVER_LETTER_ID.toString())
+                .coverLetterDocumentVersion(1)
+                .coverLetterDocumentContentSha256("b".repeat(64))
+                .status(ApplicationStatus.DOCUMENTS_GENERATED)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
     }
 }

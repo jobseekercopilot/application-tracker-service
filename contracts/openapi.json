@@ -2,14 +2,14 @@
   "openapi" : "3.0.1",
   "info" : {
     "title" : "Jobseeker Copilot - Application Tracker API",
-    "description" : "Service for tracking job applications, their generated documents, and application status.\n\nThis service stores document references only (cvDocumentId, coverLetterDocumentId).\nIt does NOT store document contents.\n\nApplicationStatus values:\n- DOCUMENTS_GENERATED - Documents have been generated for the job\n- APPLIED - Application has been submitted\n- INTERVIEW - Interview stage\n- UNSUCCESSFUL - Application was unsuccessful\n- OFFER - Offer received\n- ACCEPTED - Offer accepted\n- REJECTED_BY_USER - Offer or opportunity rejected by the user\n- WITHDRAWN - User withdrew their application\n",
+    "description" : "Service for tracking job applications, their generated documents, and application status.\n\nThis service validates and stores exact approved Document Store version\nreferences. Current editable selections are separate from the immutable\nversions frozen when an application first progresses.\nIt does NOT store document contents.\n\nApplicationStatus values:\n- DOCUMENTS_GENERATED - Documents have been generated for the job\n- APPLIED - Application has been submitted\n- INTERVIEW - Interview stage\n- UNSUCCESSFUL - Application was unsuccessful\n- OFFER - Offer received\n- ACCEPTED - Offer accepted\n- REJECTED_BY_USER - Offer or opportunity rejected by the user\n- WITHDRAWN - User withdrew their application\n",
     "contact" : {
       "name" : "Jobseeker Copilot"
     },
     "license" : {
       "name" : "Proprietary and confidential"
     },
-    "version" : "1.1.0"
+    "version" : "2.0.0"
   },
   "servers" : [ {
     "url" : "http://localhost:8088",
@@ -71,6 +71,16 @@
           "required" : true
         },
         "responses" : {
+          "400" : {
+            "description" : "Validation error or ineligible document reference",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApplicationRecordResponse"
+                }
+              }
+            }
+          },
           "201" : {
             "description" : "Application record created successfully",
             "content" : {
@@ -81,8 +91,8 @@
               }
             }
           },
-          "400" : {
-            "description" : "Validation error - missing or invalid fields",
+          "503" : {
+            "description" : "Document reference validation unavailable",
             "content" : {
               "*/*" : {
                 "schema" : {
@@ -217,7 +227,7 @@
     "/api/v1/applications/{id}/document-reference" : {
       "patch" : {
         "tags" : [ "Application Records" ],
-        "summary" : "Update the active document reference for an application",
+        "summary" : "Replace a current approved document reference before application use",
         "operationId" : "updateDocumentReference",
         "parameters" : [ {
           "name" : "id",
@@ -248,8 +258,38 @@
           "required" : true
         },
         "responses" : {
+          "400" : {
+            "description" : "Reference is invalid or already frozen",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApplicationRecordResponse"
+                }
+              }
+            }
+          },
           "200" : {
-            "description" : "OK",
+            "description" : "Current reference replaced",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApplicationRecordResponse"
+                }
+              }
+            }
+          },
+          "503" : {
+            "description" : "Document reference validation unavailable",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApplicationRecordResponse"
+                }
+              }
+            }
+          },
+          "404" : {
+            "description" : "Application record not found",
             "content" : {
               "*/*" : {
                 "schema" : {
@@ -388,6 +428,16 @@
           }
         } ],
         "responses" : {
+          "401" : {
+            "description" : "Missing, invalid or ambiguous authentication",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SecurityErrorResponse"
+                }
+              }
+            }
+          },
           "403" : {
             "description" : "Authenticated identity lacks reader permission",
             "content" : {
@@ -398,12 +448,12 @@
               }
             }
           },
-          "401" : {
-            "description" : "Missing, invalid or ambiguous authentication",
+          "404" : {
+            "description" : "Bearer subject and requested owner do not match",
             "content" : {
               "application/json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/SecurityErrorResponse"
+                  "$ref" : "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -417,16 +467,6 @@
                   "items" : {
                     "$ref" : "#/components/schemas/ApplicationRecordResponse"
                   }
-                }
-              }
-            }
-          },
-          "404" : {
-            "description" : "Bearer subject and requested owner do not match",
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -563,8 +603,58 @@
           "cvDocumentId" : {
             "type" : "string"
           },
+          "cvDocumentFamilyId" : {
+            "type" : "string"
+          },
+          "cvDocumentVersion" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "cvDocumentContentSha256" : {
+            "type" : "string"
+          },
           "coverLetterDocumentId" : {
             "type" : "string"
+          },
+          "coverLetterDocumentFamilyId" : {
+            "type" : "string"
+          },
+          "coverLetterDocumentVersion" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "coverLetterDocumentContentSha256" : {
+            "type" : "string"
+          },
+          "applicationUsedCvDocumentId" : {
+            "type" : "string"
+          },
+          "applicationUsedCvDocumentFamilyId" : {
+            "type" : "string"
+          },
+          "applicationUsedCvDocumentVersion" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "applicationUsedCvDocumentContentSha256" : {
+            "type" : "string"
+          },
+          "applicationUsedCoverLetterDocumentId" : {
+            "type" : "string"
+          },
+          "applicationUsedCoverLetterDocumentFamilyId" : {
+            "type" : "string"
+          },
+          "applicationUsedCoverLetterDocumentVersion" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "applicationUsedCoverLetterDocumentContentSha256" : {
+            "type" : "string"
+          },
+          "applicationUsedAt" : {
+            "type" : "string",
+            "format" : "date-time"
           },
           "status" : {
             "type" : "string",
@@ -663,13 +753,13 @@
           },
           "cvDocumentId" : {
             "type" : "string",
-            "description" : "ID of the generated CV document (reference only, content not stored here)",
-            "example" : "cv-123"
+            "description" : "Approved CV version ID in Document Store",
+            "format" : "uuid"
           },
           "coverLetterDocumentId" : {
             "type" : "string",
-            "description" : "ID of the generated cover letter document (reference only, content not stored here)",
-            "example" : "cl-456"
+            "description" : "Approved cover-letter version ID in Document Store",
+            "format" : "uuid"
           }
         },
         "description" : "Request to create a new application record"
@@ -734,6 +824,23 @@
             "description" : "ID of the generated cover letter document (reference only)",
             "example" : "cl-456"
           },
+          "cvDocumentReference" : {
+            "$ref" : "#/components/schemas/DocumentVersionReference"
+          },
+          "coverLetterDocumentReference" : {
+            "$ref" : "#/components/schemas/DocumentVersionReference"
+          },
+          "applicationUsedCvDocumentReference" : {
+            "$ref" : "#/components/schemas/DocumentVersionReference"
+          },
+          "applicationUsedCoverLetterDocumentReference" : {
+            "$ref" : "#/components/schemas/DocumentVersionReference"
+          },
+          "applicationUsedAt" : {
+            "type" : "string",
+            "description" : "Timestamp when application-used references were frozen",
+            "format" : "date-time"
+          },
           "status" : {
             "type" : "string",
             "description" : "Current application status",
@@ -757,6 +864,34 @@
           }
         },
         "description" : "Response containing application record details"
+      },
+      "DocumentVersionReference" : {
+        "type" : "object",
+        "properties" : {
+          "documentId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "documentFamilyId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "jobId" : {
+            "type" : "string"
+          },
+          "documentType" : {
+            "type" : "string",
+            "enum" : [ "CV", "COVER_LETTER" ]
+          },
+          "version" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "contentSha256" : {
+            "type" : "string"
+          }
+        },
+        "description" : "Canonical immutable Document Store version descriptor"
       },
       "WithdrawGeneratedApplicationResponse" : {
         "type" : "object",
@@ -804,7 +939,8 @@
             "type" : "string"
           },
           "documentId" : {
-            "type" : "string"
+            "type" : "string",
+            "format" : "uuid"
           }
         }
       },

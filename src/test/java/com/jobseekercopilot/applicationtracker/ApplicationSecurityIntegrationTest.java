@@ -14,6 +14,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jobseekercopilot.applicationtracker.dto.CreateApplicationRequest;
+import com.jobseekercopilot.applicationtracker.dto.DocumentType;
+import com.jobseekercopilot.applicationtracker.dto.DocumentVersionReference;
 import com.jobseekercopilot.applicationtracker.dto.UpdateDocumentReferenceRequest;
 import com.jobseekercopilot.applicationtracker.dto.UpdateStatusRequest;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationRecord;
@@ -21,6 +23,7 @@ import com.jobseekercopilot.applicationtracker.entity.ApplicationStatus;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationRecordRepository;
 import com.jobseekercopilot.applicationtracker.security.ApplicationOwnerResolver;
 import com.jobseekercopilot.applicationtracker.security.ApplicationServiceIdentityFilter;
+import com.jobseekercopilot.applicationtracker.service.DocumentReferenceVerifier;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
@@ -29,12 +32,16 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.when;
 
 @SpringBootTest(properties = "environment-data.enabled=true")
 @AutoConfigureMockMvc
@@ -46,6 +53,14 @@ class ApplicationSecurityIntegrationTest {
             "test-only-application-reader-token-32-bytes";
     private static final String ENVIRONMENT_DATA_TOKEN =
             "test-only-environment-data-token-32-bytes";
+    private static final UUID CV_ID =
+            UUID.fromString("11111111-1111-4111-8111-111111111111");
+    private static final UUID COVER_LETTER_ID =
+            UUID.fromString("22222222-2222-4222-8222-222222222222");
+    private static final UUID REPLACEMENT_CV_ID =
+            UUID.fromString("33333333-3333-4333-8333-333333333333");
+    private static final UUID FOREIGN_CV_ID =
+            UUID.fromString("44444444-4444-4444-8444-444444444444");
 
     private static final TestJwksServer JWKS = new TestJwksServer();
 
@@ -70,9 +85,21 @@ class ApplicationSecurityIntegrationTest {
     @Autowired
     private ApplicationRecordRepository repository;
 
+    @MockBean
+    private DocumentReferenceVerifier documentReferenceVerifier;
+
     @BeforeEach
     void cleanDatabase() {
         repository.deleteAll();
+        when(documentReferenceVerifier.verify(
+                        anyString(),
+                        any(UUID.class),
+                        anyString(),
+                        any(DocumentType.class)))
+                .thenAnswer(invocation -> reference(
+                        invocation.getArgument(1),
+                        invocation.getArgument(2),
+                        invocation.getArgument(3)));
     }
 
     @Test
@@ -140,7 +167,7 @@ class ApplicationSecurityIntegrationTest {
                         .content(objectMapper.writeValueAsString(
                                 UpdateDocumentReferenceRequest.builder()
                                         .documentType("CV")
-                                        .documentId("foreign-cv")
+                                        .documentId(FOREIGN_CV_ID)
                                         .build())))
                 .andExpect(status().isNotFound());
 
@@ -221,10 +248,11 @@ class ApplicationSecurityIntegrationTest {
                         .content(objectMapper.writeValueAsString(
                                 UpdateDocumentReferenceRequest.builder()
                                         .documentType("CV")
-                                        .documentId("replacement-cv")
+                                        .documentId(REPLACEMENT_CV_ID)
                                         .build())))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.cvDocumentId").value("replacement-cv"));
+                .andExpect(jsonPath("$.cvDocumentId")
+                        .value(REPLACEMENT_CV_ID.toString()));
 
         mockMvc.perform(patch("/api/v1/applications/{id}/document-reference", id)
                         .header(ApplicationServiceIdentityFilter.SERVICE_HEADER, READER_TOKEN)
@@ -233,7 +261,7 @@ class ApplicationSecurityIntegrationTest {
                         .content(objectMapper.writeValueAsString(
                                 UpdateDocumentReferenceRequest.builder()
                                         .documentType("CV")
-                                        .documentId("reader-cannot-write")
+                                        .documentId(REPLACEMENT_CV_ID)
                                         .build())))
                 .andExpect(status().isForbidden());
 
@@ -333,8 +361,21 @@ class ApplicationSecurityIntegrationTest {
                 .jobId("job-456")
                 .jobTitle("Java Developer")
                 .companyName("Example Ltd")
-                .cvDocumentId("cv-123")
-                .coverLetterDocumentId("cl-456")
+                .cvDocumentId(CV_ID)
+                .coverLetterDocumentId(COVER_LETTER_ID)
+                .build();
+    }
+
+    private DocumentVersionReference reference(
+            UUID id, String jobId, DocumentType type) {
+        return DocumentVersionReference.builder()
+                .documentId(id)
+                .documentFamilyId(id)
+                .jobId(jobId)
+                .documentType(type)
+                .version(id.equals(REPLACEMENT_CV_ID) ? 2 : 1)
+                .contentSha256(
+                        type == DocumentType.CV ? "a".repeat(64) : "b".repeat(64))
                 .build();
     }
 

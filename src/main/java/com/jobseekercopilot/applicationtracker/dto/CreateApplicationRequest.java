@@ -2,6 +2,8 @@ package com.jobseekercopilot.applicationtracker.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import java.util.UUID;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -42,11 +44,11 @@ public class CreateApplicationRequest {
     @Schema(description = "Job location", example = "Dorking")
     private String location;
 
-    @NotBlank(message = "cvDocumentId is required")
-    @Schema(description = "ID of the generated CV document (reference only, content not stored here)", example = "cv-123", requiredMode = Schema.RequiredMode.REQUIRED)
-    private String cvDocumentId;
+    @NotNull(message = "cvDocumentId is required")
+    @Schema(description = "Approved CV version ID in Document Store", format = "uuid", requiredMode = Schema.RequiredMode.REQUIRED)
+    private UUID cvDocumentId;
 
-    @NotBlank(message = "coverLetterDocumentId is required")
-    @Schema(description = "ID of the generated cover letter document (reference only, content not stored here)", example = "cl-456", requiredMode = Schema.RequiredMode.REQUIRED)
-    private String coverLetterDocumentId;
+    @NotNull(message = "coverLetterDocumentId is required")
+    @Schema(description = "Approved cover-letter version ID in Document Store", format = "uuid", requiredMode = Schema.RequiredMode.REQUIRED)
+    private UUID coverLetterDocumentId;
 }

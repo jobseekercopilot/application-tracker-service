@@ -53,7 +53,8 @@ public class ApplicationRecordController {
     @SecurityRequirement(name = "serviceToken")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Application record created successfully"),
-            @ApiResponse(responseCode = "400", description = "Validation error - missing or invalid fields")
+            @ApiResponse(responseCode = "400", description = "Validation error or ineligible document reference"),
+            @ApiResponse(responseCode = "503", description = "Document reference validation unavailable")
     })
     public ResponseEntity<ApplicationRecordResponse> createApplication(
             @Valid @RequestBody CreateApplicationRequest request,
@@ -159,9 +160,15 @@ public class ApplicationRecordController {
     }
 
     @PatchMapping("/{id}/document-reference")
-    @Operation(summary = "Update the active document reference for an application")
+    @Operation(summary = "Replace a current approved document reference before application use")
     @SecurityRequirement(name = "bearerAuth")
     @SecurityRequirement(name = "serviceToken")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Current reference replaced"),
+            @ApiResponse(responseCode = "400", description = "Reference is invalid or already frozen"),
+            @ApiResponse(responseCode = "404", description = "Application record not found"),
+            @ApiResponse(responseCode = "503", description = "Document reference validation unavailable")
+    })
     public ResponseEntity<ApplicationRecordResponse> updateDocumentReference(
             @Parameter(description = "UUID of the application record") @PathVariable UUID id,
             @Valid @RequestBody UpdateDocumentReferenceRequest request,
