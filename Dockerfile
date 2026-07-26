@@ -5,7 +5,10 @@ COPY pom.xml .
 COPY contracts ./contracts
 COPY src ./src
 
-RUN mvn -B --no-transfer-progress clean verify
+# The authoritative verification gate runs before the image build because the
+# PostgreSQL integration tests use Testcontainers and a standard Docker build
+# must not receive the host Docker socket. Test sources are still compiled here.
+RUN mvn -B --no-transfer-progress -DskipTests clean package
 
 FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app

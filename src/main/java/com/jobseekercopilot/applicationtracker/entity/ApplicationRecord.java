@@ -4,8 +4,6 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
@@ -27,8 +25,8 @@ import java.util.UUID;
 public class ApplicationRecord {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;
+    @Builder.Default
+    private UUID id = UUID.randomUUID();
 
     @Column(nullable = false)
     private String userId;
@@ -42,12 +40,13 @@ public class ApplicationRecord {
 
     private String externalJobId;
 
-    @Column(nullable = false)
+    @Column(nullable = false, length = 300)
     private String jobTitle;
 
-    @Column(nullable = false)
+    @Column(nullable = false, length = 300)
     private String companyName;
 
+    @Column(length = 300)
     private String location;
 
     @Column(nullable = false)

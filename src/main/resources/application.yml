@@ -5,19 +5,33 @@ spring:
   application:
     name: application-tracker-service
   datasource:
-    url: jdbc:h2:mem:applicationtracker
-    driver-class-name: org.h2.Driver
-    username: sa
-    password:
+    url: ${APPLICATION_TRACKER_DATABASE_URL}
+    driver-class-name: org.postgresql.Driver
+    username: ${APPLICATION_TRACKER_DATABASE_USERNAME}
+    password: ${APPLICATION_TRACKER_DATABASE_PASSWORD}
+    hikari:
+      initialization-fail-timeout: 1
+      data-source-properties:
+        sslmode: ${APPLICATION_TRACKER_DATABASE_SSL_MODE:verify-full}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration/common
+    clean-disabled: true
+    validate-on-migrate: true
+    validate-migration-naming: true
   h2:
     console:
-      enabled: true
-      path: /h2-console
+      enabled: false
   jpa:
     hibernate:
-      ddl-auto: create-drop
-    show-sql: true
-    database-platform: org.hibernate.dialect.H2Dialect
+      ddl-auto: validate
+    open-in-view: false
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+        jdbc:
+          time_zone: UTC
 
 logging:
   pattern:
@@ -25,6 +39,8 @@ logging:
   level:
     com.jobseekercopilot: ${APP_LOG_LEVEL:INFO}
     org.springframework.web.servlet.handler.HandlerMappingIntrospector: ERROR
+    org.hibernate.SQL: "OFF"
+    org.hibernate.orm.jdbc.bind: "OFF"
 
 management:
   endpoints:
@@ -33,6 +49,12 @@ management:
         include: health
 
 application-tracker:
+  database:
+    production-safety-check: ${APPLICATION_TRACKER_DATABASE_PRODUCTION_SAFETY_CHECK:true}
+    encryption-at-rest-enabled: ${APPLICATION_TRACKER_DATABASE_ENCRYPTION_AT_REST_ENABLED:false}
+    encryption-key-reference: ${APPLICATION_TRACKER_DATABASE_ENCRYPTION_KEY_REFERENCE:}
+    backup-encryption-enabled: ${APPLICATION_TRACKER_DATABASE_BACKUP_ENCRYPTION_ENABLED:false}
+    backup-key-reference: ${APPLICATION_TRACKER_DATABASE_BACKUP_KEY_REFERENCE:}
   security:
     jwk-set-uri: ${AUTH_JWKS_URI:http://localhost:8084/.well-known/jwks.json}
     issuer: ${APPLICATION_TRACKER_JWT_ISSUER:job-seeker-copilot-authentication}
