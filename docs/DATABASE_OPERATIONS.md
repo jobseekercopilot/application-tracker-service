@@ -57,7 +57,7 @@ That switch is forbidden in a production deployment.
 5. Deploy one instance, allow Flyway to migrate, then require health and
    migration validation before the rollout continues.
 
-Migrations are forward-only. V2, V3 and V4 are additive and the recovery test
+Migrations are forward-only. V2, V3, V4 and V5 are additive and the recovery test
 proves that a V1 reader can still select its original columns after upgrade. A
 later incompatible change must be rolled forward with a corrective migration.
 If a safe roll-forward is impossible, stop writes and restore the encrypted
@@ -71,6 +71,8 @@ job ID. V3 reserves nullable `fixture_scenario_id`; existing/ordinary rows stay
 V4 adds nullable immutable document-version metadata and application-used
 references. Existing rows remain readable and are not assigned invented
 document versions or checksums.
+V5 adds a non-negative `record_version`, backfilled to zero, for JPA optimistic
+locking. It does not change the columns consumed by pre-upgrade readers.
 
 ## Recovery objectives
 
@@ -91,8 +93,9 @@ or restore-drill age breaches these targets.
 
 - creates the inherited V1 schema and record;
 - rejects an invalid status and invalid credentials;
-- upgrades through the additive V2/V3/V4 migrations;
+- upgrades through the additive V2/V3/V4/V5 migrations;
 - proves inherited rows receive no invented immutable document reference;
+- proves inherited rows receive version zero;
 - proves ordinary data is not classified as fixture data;
 - repeats the startup migration path against the same database;
 - creates a PostgreSQL custom-format backup and restores it to a fresh database;
@@ -101,7 +104,8 @@ or restore-drill age breaches these targets.
 - deletes the restored synthetic record and proves absence.
 
 `PostgresJpaSchemaIntegrationTest` proves Flyway's final PostgreSQL schema
-matches the JPA entity and preserves service-assigned UUIDs.
+matches the JPA entity, preserves service-assigned UUIDs and rejects the second
+of two writers that loaded the same record version.
 
 This local drill does not constitute AWS backup, encryption or disaster-recovery
 evidence. Before beta enablement, an operator must restore an approved

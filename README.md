@@ -21,9 +21,14 @@ mvn -B clean verify
 The service builds and runs its tests from tracked source only. Non-test
 runtime uses PostgreSQL with forward-only Flyway migrations and Hibernate
 schema validation. H2 is restricted to isolated tests. The real PostgreSQL
-verification covers migration, restart persistence, backup and restore without
-calling AWS or any paid service. See
+verification covers migration, restart persistence, optimistic concurrency,
+backup and restore without calling AWS or any paid service. See
 [`docs/DATABASE_OPERATIONS.md`](docs/DATABASE_OPERATIONS.md).
+
+Application status changes follow a documented forward-only lifecycle. Invalid
+or stale updates return `409`, same-status retries are idempotent, and every
+response publishes the record's optimistic `version`. See
+[`docs/APPLICATION_LIFECYCLE.md`](docs/APPLICATION_LIFECYCLE.md).
 
 The producer-owned OpenAPI contract is in `contracts/openapi.json`.
 `OpenApiExportTest` generates the runtime document and fails `mvn clean verify`
@@ -33,9 +38,10 @@ verification before building the image. The Docker build compiles the test
 sources but does not execute the PostgreSQL Testcontainers suite because a
 standard image build must not receive the host Docker socket.
 
-The version `1.1.0` owner-scoped list operation explicitly publishes the
-generated response model and stable authentication, authorization and
-owner-mismatch error schemas used by read-only consumers such as Job Matching.
+The version `2.1.0` contract adds backwards-compatible lifecycle concurrency
+metadata while retaining the owner-scoped list operation's explicit response
+model and stable authentication, authorization and owner-mismatch error schemas
+used by read-only consumers such as Job Matching.
 
 ## Security boundary
 

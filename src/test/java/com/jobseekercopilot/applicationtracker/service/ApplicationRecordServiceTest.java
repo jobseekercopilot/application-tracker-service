@@ -224,9 +224,9 @@ class ApplicationRecordServiceTest {
                 .updatedAt(LocalDateTime.now())
                 .build();
 
-        when(repository.findForUpdateByIdAndUserId(id, "user-123"))
-                .thenReturn(Optional.of(record));
-        when(repository.save(any(ApplicationRecord.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(repository.findByIdAndUserId(id, "user-123")).thenReturn(Optional.of(record));
+        when(repository.saveAndFlush(any(ApplicationRecord.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
 
         ApplicationRecordResponse response = service.updateStatus("user-123", id, request);
 
@@ -269,9 +269,9 @@ class ApplicationRecordServiceTest {
                 .updatedAt(LocalDateTime.now().minusDays(1))
                 .build();
 
-        when(repository.findForUpdateByIdAndUserId(id, "user-123"))
-                .thenReturn(Optional.of(record));
-        when(repository.save(any(ApplicationRecord.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(repository.findByIdAndUserId(id, "user-123")).thenReturn(Optional.of(record));
+        when(repository.saveAndFlush(any(ApplicationRecord.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
 
         ApplicationRecordResponse response = service.updateStatus("user-123", id, request);
 
@@ -315,24 +315,26 @@ class ApplicationRecordServiceTest {
     }
 
     @Test
-    void frozenReferencesSurviveStatusRegressionAndRejectReplacement() {
+    void frozenReferencesSurviveFurtherProgressionAndRejectReplacement() {
         UUID id = UUID.randomUUID();
         ApplicationRecord record = canonicalRecord(id);
+        when(repository.findByIdAndUserId(id, "user-123"))
+                .thenReturn(Optional.of(record));
         when(repository.findForUpdateByIdAndUserId(id, "user-123"))
                 .thenReturn(Optional.of(record));
-        when(repository.save(any(ApplicationRecord.class)))
+        when(repository.saveAndFlush(any(ApplicationRecord.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         service.updateStatus(
                 "user-123",
                 id,
                 UpdateStatusRequest.builder().status("APPLIED").build());
-        ApplicationRecordResponse regressed = service.updateStatus(
+        ApplicationRecordResponse progressed = service.updateStatus(
                 "user-123",
                 id,
-                UpdateStatusRequest.builder().status("DOCUMENTS_GENERATED").build());
+                UpdateStatusRequest.builder().status("INTERVIEW").build());
 
-        assertThat(regressed.getApplicationUsedCvDocumentReference().getDocumentId())
+        assertThat(progressed.getApplicationUsedCvDocumentReference().getDocumentId())
                 .isEqualTo(CV_ID);
         assertThatThrownBy(() -> service.updateDocumentReference(
                         "user-123",
@@ -364,7 +366,7 @@ class ApplicationRecordServiceTest {
                 .status(ApplicationStatus.DOCUMENTS_GENERATED)
                 .build();
 
-        when(repository.findForUpdateByIdAndUserId(id, "user-123"))
+        when(repository.findByIdAndUserId(id, "user-123"))
                 .thenReturn(Optional.of(record));
 
         assertThatThrownBy(() -> service.updateStatus("user-123", id, request))

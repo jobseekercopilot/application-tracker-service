@@ -32,6 +32,10 @@ enablement or represent a durable, access-controlled source of truth.
   `1.1.0` and makes its guaranteed fields plus `401`, `403` and `404` models
   explicit. A focused policy test prevents that consumer boundary from
   silently weakening.
+- APP-06 defines and enforces the forward-only lifecycle, makes repeated status
+  commands idempotent, publishes record versions and returns stable `409`
+  conflicts for invalid, stale or concurrent writes. Unit, HTTP and real
+  PostgreSQL tests cover the complete matrix and competing writers.
 
 ## Critical findings
 
@@ -54,15 +58,18 @@ backup and restore evidence. Production configuration fails closed unless
 verified TLS plus managed database/backup encryption references are declared.
 Infrastructure must still provide the private managed database, secret
 injection, automated encrypted recovery points and a deployed restore drill
-before this service can be enabled for beta. Row-versioning remains APP-06.
+before this service can be enabled for beta. APP-06 provides repository
+row-versioning; deployment and consumer rollout remain dependencies.
 
-### No valid lifecycle or immutable history
+### Lifecycle guarded; immutable history still absent
 
-Any supported status can replace any other status, including backward moves and
-changes after terminal outcomes. Only the current status is stored. Interview,
+APP-06 rejects skipped, backward and post-terminal transitions, treats
+same-status retries as no-op successes, and prevents stale or concurrent writes
+from silently winning. Only the current status is still stored. Interview,
 offer, unsuccessful and withdrawal times are synthesized by clients from the
-record's latest update time, so prior events disappear or are misdated. Concurrent
-updates have no optimistic version or conflict behavior.
+record's latest update time, so prior events disappear or are misdated. APP-07
+must add immutable transition history before the full activity timeline is
+beta-ready.
 
 ### Generation is coupled to tracking
 
@@ -105,10 +112,10 @@ removes the unused binary, makes the Docker build verify source, and
 runtime-checks the tracked OpenAPI document. Its conflicting MIT metadata is
 replaced with the repository's proprietary classification. APP-03 adds
 authentication, cross-user access, System Data isolation and privacy-redaction
-coverage. Tests still do not cover valid transition rules, duplicate create,
-concurrency, migrations, pagination or cleanup failures. Browser E2E steps can
-wait and return without asserting failure, allowing false-positive tracking
-journeys.
+coverage. APP-04 and APP-06 add real migrations, recovery, valid-transition and
+concurrency coverage. Tests still do not cover duplicate create, pagination or
+cleanup failures. Browser E2E steps can wait and return without asserting
+failure, allowing false-positive tracking journeys.
 
 ## Functional classification
 
@@ -116,7 +123,7 @@ journeys.
 |---|---|
 | Create tracked application | Incomplete; generated-document-only and non-idempotent |
 | User/application/document lookup | Owner-scoped in the service; consumer rollout pending |
-| Status lifecycle | Incomplete; unrestricted current-state replacement |
+| Status lifecycle | Repository enforcement complete; client adoption and immutable APP-07 history pending |
 | Activity history/timeline | Absent; clients synthesize lossy events |
 | Document replacement | Incomplete; cross-service consistency gap |
 | Withdrawal/deletion | Unsafe; best-effort cleanup and permanent removal |

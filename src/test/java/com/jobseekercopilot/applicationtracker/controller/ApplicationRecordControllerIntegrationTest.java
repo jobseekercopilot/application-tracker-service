@@ -25,8 +25,10 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.LocalDateTime;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -257,6 +259,7 @@ class ApplicationRecordControllerIntegrationTest {
 
         UpdateStatusRequest request = UpdateStatusRequest.builder()
                 .status("APPLIED")
+                .expectedVersion(saved.getVersion())
                 .build();
 
         mockMvc.perform(patch("/api/v1/applications/{id}/status", saved.getId())
@@ -272,7 +275,161 @@ class ApplicationRecordControllerIntegrationTest {
                         .value(CV_ID.toString()))
                 .andExpect(jsonPath("$.applicationUsedCoverLetterDocumentReference.documentId")
                         .value(COVER_LETTER_ID.toString()))
-                .andExpect(jsonPath("$.appliedAt").isNotEmpty());
+                .andExpect(jsonPath("$.appliedAt").isNotEmpty())
+                .andExpect(jsonPath("$.version").value(1));
+    }
+
+    @Test
+    void updateStatus_WithDisallowedJump_ShouldReturn409AndKeepRecord() throws Exception {
+        ApplicationRecord saved = repository.saveAndFlush(ApplicationRecord.builder()
+                .userId("transition-owner")
+                .jobId("transition-job")
+                .jobTitle("Java Developer")
+                .companyName("Example Ltd")
+                .cvDocumentId("transition-cv")
+                .coverLetterDocumentId("transition-cl")
+                .status(ApplicationStatus.DOCUMENTS_GENERATED)
+                .build());
+        LocalDateTime updatedAt =
+                repository.findById(saved.getId()).orElseThrow().getUpdatedAt();
+
+        mockMvc.perform(patch("/api/v1/applications/{id}/status", saved.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authorization("transition-owner"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(UpdateStatusRequest.builder()
+                                .status("OFFER")
+                                .expectedVersion(saved.getVersion())
+                                .build())))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status").value(409))
+                .andExpect(jsonPath("$.message").value(
+                        "Application status transition from DOCUMENTS_GENERATED to OFFER is not allowed."));
+
+        ApplicationRecord unchanged = repository.findById(saved.getId()).orElseThrow();
+        assertThat(unchanged.getStatus()).isEqualTo(ApplicationStatus.DOCUMENTS_GENERATED);
+        assertThat(unchanged.getVersion()).isZero();
+        assertThat(unchanged.getUpdatedAt()).isEqualTo(updatedAt);
+    }
+
+    @Test
+    void updateStatus_WithStaleVersion_ShouldReturn409AndKeepRecord() throws Exception {
+        LocalDateTime appliedAt = LocalDateTime.of(2026, 7, 26, 18, 0);
+        ApplicationRecord saved = repository.saveAndFlush(ApplicationRecord.builder()
+                .userId("stale-owner")
+                .jobId("stale-job")
+                .jobTitle("Java Developer")
+                .companyName("Example Ltd")
+                .cvDocumentId("stale-cv")
+                .coverLetterDocumentId("stale-cl")
+                .status(ApplicationStatus.APPLIED)
+                .appliedAt(appliedAt)
+                .build());
+        LocalDateTime updatedAt =
+                repository.findById(saved.getId()).orElseThrow().getUpdatedAt();
+
+        mockMvc.perform(patch("/api/v1/applications/{id}/status", saved.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authorization("stale-owner"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(UpdateStatusRequest.builder()
+                                .status("INTERVIEW")
+                                .expectedVersion(saved.getVersion() + 1)
+                                .build())))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status").value(409))
+                .andExpect(jsonPath("$.message").value(
+                        "Application was changed by another request. Refresh and retry."));
+
+        ApplicationRecord unchanged = repository.findById(saved.getId()).orElseThrow();
+        assertThat(unchanged.getStatus()).isEqualTo(ApplicationStatus.APPLIED);
+        assertThat(unchanged.getVersion()).isZero();
+        assertThat(unchanged.getAppliedAt()).isEqualTo(appliedAt);
+        assertThat(unchanged.getUpdatedAt()).isEqualTo(updatedAt);
+    }
+
+    @Test
+    void updateStatus_RepeatedStatus_ShouldBeIdempotentEvenWithStaleVersion()
+            throws Exception {
+        ApplicationRecord saved = repository.saveAndFlush(ApplicationRecord.builder()
+                .userId("retry-owner")
+                .jobId("retry-job")
+                .jobTitle("Java Developer")
+                .companyName("Example Ltd")
+                .cvDocumentId("retry-cv")
+                .coverLetterDocumentId("retry-cl")
+                .status(ApplicationStatus.APPLIED)
+                .appliedAt(LocalDateTime.of(2026, 7, 26, 18, 0))
+                .build());
+        LocalDateTime updatedAt =
+                repository.findById(saved.getId()).orElseThrow().getUpdatedAt();
+
+        mockMvc.perform(patch("/api/v1/applications/{id}/status", saved.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authorization("retry-owner"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(UpdateStatusRequest.builder()
+                                .status("APPLIED")
+                                .expectedVersion(99L)
+                                .build())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("APPLIED"))
+                .andExpect(jsonPath("$.version").value(0));
+
+        ApplicationRecord unchanged = repository.findById(saved.getId()).orElseThrow();
+        assertThat(unchanged.getVersion()).isZero();
+        assertThat(unchanged.getUpdatedAt()).isEqualTo(updatedAt);
+    }
+
+    @Test
+    void updateStatus_FromTerminalState_ShouldReturn409() throws Exception {
+        ApplicationRecord saved = repository.saveAndFlush(ApplicationRecord.builder()
+                .userId("terminal-owner")
+                .jobId("terminal-job")
+                .jobTitle("Java Developer")
+                .companyName("Example Ltd")
+                .cvDocumentId("terminal-cv")
+                .coverLetterDocumentId("terminal-cl")
+                .status(ApplicationStatus.ACCEPTED)
+                .appliedAt(LocalDateTime.of(2026, 7, 26, 18, 0))
+                .build());
+
+        mockMvc.perform(patch("/api/v1/applications/{id}/status", saved.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authorization("terminal-owner"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(UpdateStatusRequest.builder()
+                                .status("INTERVIEW")
+                                .expectedVersion(saved.getVersion())
+                                .build())))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(
+                        "Application status transition from ACCEPTED to INTERVIEW is not allowed."));
+
+        assertThat(repository.findById(saved.getId()).orElseThrow().getStatus())
+                .isEqualTo(ApplicationStatus.ACCEPTED);
+    }
+
+    @Test
+    void updateStatus_WithNegativeExpectedVersion_ShouldReturn400() throws Exception {
+        ApplicationRecord saved = repository.saveAndFlush(ApplicationRecord.builder()
+                .userId("validation-owner")
+                .jobId("validation-job")
+                .jobTitle("Java Developer")
+                .companyName("Example Ltd")
+                .cvDocumentId("validation-cv")
+                .coverLetterDocumentId("validation-cl")
+                .status(ApplicationStatus.DOCUMENTS_GENERATED)
+                .build());
+
+        mockMvc.perform(patch("/api/v1/applications/{id}/status", saved.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authorization("validation-owner"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(UpdateStatusRequest.builder()
+                                .status("APPLIED")
+                                .expectedVersion(-1L)
+                                .build())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Validation failed"));
+
+        assertThat(repository.findById(saved.getId()).orElseThrow().getStatus())
+                .isEqualTo(ApplicationStatus.DOCUMENTS_GENERATED);
     }
 
     @Test

@@ -7,8 +7,10 @@ import com.jobseekercopilot.applicationtracker.dto.DocumentVersionReference;
 import com.jobseekercopilot.applicationtracker.dto.UpdateStatusRequest;
 import com.jobseekercopilot.applicationtracker.dto.UpdateDocumentReferenceRequest;
 import com.jobseekercopilot.applicationtracker.dto.WithdrawGeneratedApplicationResponse;
+import com.jobseekercopilot.applicationtracker.entity.ApplicationLifecycle;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationRecord;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationStatus;
+import com.jobseekercopilot.applicationtracker.exception.ApplicationVersionConflictException;
 import com.jobseekercopilot.applicationtracker.exception.InvalidStatusException;
 import com.jobseekercopilot.applicationtracker.exception.InvalidDocumentReferenceException;
 import com.jobseekercopilot.applicationtracker.exception.ResourceNotFoundException;
@@ -123,10 +125,18 @@ public class ApplicationRecordService {
             UUID id,
             UpdateStatusRequest request) {
         long startedAt = System.nanoTime();
-        ApplicationRecord record = findOwnedApplicationForUpdate(ownerId, id);
+        ApplicationRecord record = findOwnedApplication(ownerId, id);
 
         ApplicationStatus previousStatus = record.getStatus();
         ApplicationStatus newStatus = parseSupportedStatus(request.getStatus());
+        if (previousStatus == newStatus) {
+            return mapToResponse(record);
+        }
+        ApplicationLifecycle.requireTransition(previousStatus, newStatus);
+        if (request.getExpectedVersion() != null
+                && request.getExpectedVersion() != record.getVersion()) {
+            throw new ApplicationVersionConflictException();
+        }
         if (newStatus != ApplicationStatus.DOCUMENTS_GENERATED
                 && record.getApplicationUsedCvDocumentId() == null) {
             freezeApplicationUsedReferences(record);
@@ -136,7 +146,7 @@ public class ApplicationRecordService {
             record.setAppliedAt(LocalDateTime.now());
         }
 
-        ApplicationRecord updated = repository.save(record);
+        ApplicationRecord updated = repository.saveAndFlush(record);
         log.info("Owner-scoped application status updated previousStatus={} newStatus={} durationMs={}",
                 previousStatus,
                 newStatus,
@@ -237,6 +247,7 @@ public class ApplicationRecordService {
                 .createdAt(record.getCreatedAt())
                 .updatedAt(record.getUpdatedAt())
                 .appliedAt(record.getAppliedAt())
+                .version(record.getVersion())
                 .build();
     }
 

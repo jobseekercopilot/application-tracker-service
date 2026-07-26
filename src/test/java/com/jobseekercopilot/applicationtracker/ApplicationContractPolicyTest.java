@@ -24,7 +24,7 @@ class ApplicationContractPolicyTest {
         JsonNode operation =
                 contract.at("/paths/~1api~1v1~1applications~1user~1{userId}/get");
 
-        assertEquals("2.0.0", contract.at("/info/version").asText());
+        assertEquals("2.1.0", contract.at("/info/version").asText());
         assertEquals("getApplicationsForUser", operation.path("operationId").asText());
         assertEquals(
                         Set.of("bearerAuth", "serviceToken"),
@@ -70,6 +70,36 @@ class ApplicationContractPolicyTest {
                 "coverLetterDocumentId",
                 "status",
                 "createdAt",
-                "updatedAt")));
+                "updatedAt",
+                "version")));
+    }
+
+    @Test
+    void statusMutationContractPublishesConcurrencyAndConflictSemantics()
+            throws Exception {
+        JsonNode contract = objectMapper.readTree(CONTRACT.toFile());
+        JsonNode operation =
+                contract.at("/paths/~1api~1v1~1applications~1{id}~1status/patch");
+
+        assertEquals(
+                "#/components/schemas/UpdateStatusRequest",
+                operation.at("/requestBody/content/application~1json/schema/$ref").asText());
+        assertEquals(
+                "#/components/schemas/ApplicationRecordResponse",
+                operation.at("/responses/200/content/application~1json/schema/$ref").asText());
+        assertEquals(
+                "#/components/schemas/ErrorResponse",
+                operation.at("/responses/409/content/application~1json/schema/$ref").asText());
+        assertEquals(
+                0,
+                contract.at("/components/schemas/UpdateStatusRequest/properties/expectedVersion/minimum")
+                        .asInt());
+        assertTrue(contract
+                .at("/components/schemas/UpdateStatusRequest/properties/expectedVersion")
+                .has("minimum"));
+        assertTrue(contract
+                .at("/components/schemas/UpdateStatusRequest/properties/expectedVersion/description")
+                .asText()
+                .contains("409"));
     }
 }

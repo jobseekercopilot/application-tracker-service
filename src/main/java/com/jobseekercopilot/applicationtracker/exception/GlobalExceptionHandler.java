@@ -1,5 +1,7 @@
 package com.jobseekercopilot.applicationtracker.exception;
 
+import jakarta.persistence.OptimisticLockException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -32,6 +34,24 @@ public class GlobalExceptionHandler {
                 .timestamp(LocalDateTime.now())
                 .build();
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+    }
+
+    @ExceptionHandler({
+            InvalidApplicationTransitionException.class,
+            ApplicationVersionConflictException.class,
+            OptimisticLockException.class,
+            OptimisticLockingFailureException.class
+    })
+    public ResponseEntity<ErrorResponse> handleApplicationConflict(Exception ex) {
+        String message = ex instanceof InvalidApplicationTransitionException
+                ? ex.getMessage()
+                : "Application was changed by another request. Refresh and retry.";
+        ErrorResponse error = ErrorResponse.builder()
+                .status(HttpStatus.CONFLICT.value())
+                .message(message)
+                .timestamp(LocalDateTime.now())
+                .build();
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(error);
     }
 
     @ExceptionHandler(InvalidRequestException.class)
