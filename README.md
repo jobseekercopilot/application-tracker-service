@@ -54,13 +54,13 @@ verification before building the image. The Docker build compiles the test
 sources but does not execute the PostgreSQL Testcontainers suite because a
 standard image build must not receive the host Docker socket.
 
-The version `3.2.0` contract retains the owner-scoped public list and lifecycle
+The version `3.3.0` contract retains the owner-scoped public list and lifecycle
 concurrency contracts while replacing the unsafe raw-entity System Data routes
 with a constrained, versioned, owner-and-scenario-scoped fixture boundary and
-adds backward-compatible activity-history and recoverable generated-withdrawal
-operations. A withdrawal now returns a durable operation ID and either a
-completed `200` or recovery-pending `202`; it never reports success after only
-part of document cleanup. It
+adds backward-compatible activity-history, recoverable generated-withdrawal
+and durable document-replacement operations. A withdrawal or replacement
+returns a durable operation ID and either a completed `200` or recovery-pending
+`202`; it never reports success after only part of a cross-service workflow. It
 continues to publish the explicit response and stable authentication,
 authorization, conflict and owner-mismatch error schemas used by consumers.
 

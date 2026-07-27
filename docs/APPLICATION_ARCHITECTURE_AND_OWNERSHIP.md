@@ -85,7 +85,7 @@ flowchart LR
 | --- | --- | --- |
 | Application Tracker | `ApplicationRecordController`, `ApplicationRecordService`, `ApplicationRecord`, `ApplicationSecurityConfig` | Owns the row, owner-scoped queries, lifecycle transition, record version and current/frozen document references. |
 | CV and Cover Letter Service | `CvCoverLetterService.generate` and `createApplication` | Saves two documents and currently creates a `DOCUMENTS_GENERATED` application before billing commit. CVCL-01 owns removal of that coupling. |
-| Document Generation Gateway | `DocumentGenerationService.fetchApplication`, `validateApplicationAllowsDocumentReplacement` and replacement flow | Reads application state and currently updates Document Store before updating the application reference. APP-08 and DOCGEN-17 own the recoverable target. |
+| Document Generation Gateway | Tracker replacement workflow adapter and replacement flow | Starts a durable Tracker operation before Store writes, uses replay-safe downstream keys and reports pending recovery truthfully. Tracker alone commits the application reference. |
 | Job Finder Gateway | `JobSearchController` application list/status/withdraw endpoints | Delegates the user Bearer token, validates returned resource identity and preserves Tracker's completed or recovery-pending withdrawal response. It performs no document cleanup. |
 | Job Matching Service | `ApplicationTrackerClient` and `JobMatchingService` | Reads owner-scoped application rows and derives ephemeral job-card enrichment. |
 | Reporting Service | `ReportingService.applicationsFor`, `applicationSummary` and `timeline` | Reads owner-scoped rows and currently infers one activity from each mutable row. REPORT-04/06 own historical reporting delivery. |
@@ -152,7 +152,7 @@ credential values in contracts, logs or repositories.
 | --- | --- | --- | --- |
 | Generate draft documents | CV/Cover Letter generation operation | Generation owns provider, billing reservation and draft saves. No Tracker row is created merely because generation succeeded. Partial work is resumed or compensated by operation key. | CVCL-01, CVCL-02 |
 | Create application | Tracker idempotency key plus application transaction | Reference validation failure creates no row. A database failure creates no row. A lost success response is safely replayed. | APP-05, DOCGEN-17 |
-| Replace selected document | Tracker reference command and outbox/workflow state | Store unavailability rejects before commit; projection/retention failure remains visible and retryable after commit. The caller never reports full success after only one side changed. | APP-08, DOCGEN-17 |
+| Replace selected document | Tracker `application_document_workflows` row and immutable Store reference verification | Delivered: the old reference remains current until an approved same-owner/job/type replacement is atomically committed; retries and lost final responses retain durable recovery state. | APP-08, DOCGEN-17 |
 | Change lifecycle state | Tracker database transaction | Invalid/stale/concurrent commands return stable `409`; successful state, frozen references and event are atomic. | APP-06, APP-07 |
 | Withdraw generated-only application | Tracker `application_document_workflows` row plus Store application-workflow command | Delivered: cleanup is atomic, idempotent and retryable; the application remains visible until completion; the response distinguishes accepted/pending from completed cleanup. APP-08 remains open for replacement and reconciliation. | APP-08, APP-09 |
 | Archive/delete submitted application | Tracker retention decision plus Store retention outcome | Legal/product retention rules can refuse or defer physical deletion; audit history and dependency state remain reconcilable. | APP-09 |
@@ -161,7 +161,9 @@ credential values in contracts, logs or repositories.
 | Seed/reset E2E scenario | Per-service idempotent fixture operation | System Data fails the named-state workflow visibly and can retry/reset the same owner/scenario boundary. No production data path is opened. | APP-11, E2E |
 
 APP-08 implements the concrete workflow mechanism incrementally. Generated
-withdrawal now uses a durable Tracker workflow and an atomic Store command.
+withdrawal uses a durable Tracker workflow and an atomic Store command.
+Document replacement uses the same durable coordination table, stable
+downstream idempotency keys and scheduled reconciliation.
 Replacement and application/document-link reconciliation remain unfinished.
 
 ## Contract and test boundaries
@@ -184,7 +186,7 @@ Replacement and application/document-link reconciliation remain unfinished.
 | APP-04 | PostgreSQL is the application system of record. | Managed deployment, encryption, backup and restore evidence. |
 | APP-05 | Creation is explicit, generation-independent and idempotent. | Request identity, uniqueness, manual/external capture and implementation. |
 | APP-06 / APP-07 | Tracker owns lifecycle and append-only history. | Existing transition rollout plus event schema/storage/reopen rules. |
-| APP-08 / APP-09 | Tracker owns durable workflow/application retention; Store owns content retention. | Generated withdrawal recovery is delivered; replacement, link reconciliation and approved archive/delete policy remain. |
+| APP-08 / APP-09 | Tracker owns durable workflow/application retention; Store owns content retention. | Generated withdrawal and replacement recovery are delivered; broader link reconciliation and approved archive/delete policy remain. |
 | APP-10 / APP-14 / APP-17 | Tracker owns scalable owner queries and final evidence. | Pagination/indexing, test consolidation and private-beta validation. |
 | APP-15 and E2E | Client displays Tracker facts and uses Job Finder as the user command boundary. | Accessible UX and deterministic browser evidence. |
 | CVCL-01 / CVCL-02 | Generation no longer implies application creation. | Draft/approval/billing recovery and contract rollout. |

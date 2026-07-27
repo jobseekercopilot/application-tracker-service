@@ -14,8 +14,11 @@ import com.jobseekercopilot.applicationtracker.exception.InvalidDocumentReferenc
 import com.jobseekercopilot.applicationtracker.repository.ApplicationRecordRepository;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationEventRepository;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationDocumentWorkflowRepository;
+import com.jobseekercopilot.applicationtracker.security.ApplicationOwnerResolver;
+import com.jobseekercopilot.applicationtracker.security.ApplicationServiceIdentityFilter;
 import com.jobseekercopilot.applicationtracker.service.DocumentStoreWorkflowClient;
 import com.jobseekercopilot.applicationtracker.service.DocumentReferenceVerifier;
+import com.jobseekercopilot.applicationtracker.service.ApplicationReplacementWorkflowService;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -60,6 +63,8 @@ class ApplicationRecordControllerIntegrationTest {
             UUID.fromString("11111111-1111-4111-8111-111111111111");
     private static final UUID COVER_LETTER_ID =
             UUID.fromString("22222222-2222-4222-8222-222222222222");
+    private static final String PRODUCER_TOKEN =
+            "test-only-application-producer-token-32-bytes";
 
     @DynamicPropertySource
     static void jwtProperties(DynamicPropertyRegistry registry) {
@@ -87,6 +92,9 @@ class ApplicationRecordControllerIntegrationTest {
 
     @Autowired
     private ApplicationDocumentWorkflowRepository workflowRepository;
+
+    @Autowired
+    private ApplicationReplacementWorkflowService replacementWorkflowService;
 
     @MockBean
     private DocumentReferenceVerifier documentReferenceVerifier;
@@ -779,6 +787,148 @@ class ApplicationRecordControllerIntegrationTest {
     }
 
     @Test
+    void documentReplacementRemainsVisibleAndReplaysUntilTrackerCommits()
+            throws Exception {
+        String ownerId = "replacement-owner";
+        UUID replacementId =
+                UUID.fromString("33333333-3333-4333-8333-333333333333");
+        ApplicationRecord saved = repository.save(
+                ApplicationRecord.builder()
+                        .userId(ownerId)
+                        .jobId("job-replacement")
+                        .jobTitle("Platform Engineer")
+                        .companyName("Example Ltd")
+                        .cvDocumentId(CV_ID.toString())
+                        .cvDocumentFamilyId(CV_ID.toString())
+                        .cvDocumentVersion(1)
+                        .cvDocumentContentSha256("a".repeat(64))
+                        .coverLetterDocumentId(
+                                COVER_LETTER_ID.toString())
+                        .coverLetterDocumentFamilyId(
+                                COVER_LETTER_ID.toString())
+                        .coverLetterDocumentVersion(1)
+                        .coverLetterDocumentContentSha256(
+                                "b".repeat(64))
+                        .status(ApplicationStatus.DOCUMENTS_GENERATED)
+                        .build());
+        String beginRequest = """
+                {
+                  "documentType": "CV",
+                  "requestSha256": "%s"
+                }
+                """.formatted("c".repeat(64));
+
+        String accepted = mockMvc.perform(post(
+                                "/api/v1/applications/{id}/document-replacements",
+                                saved.getId())
+                        .header(
+                                HttpHeaders.AUTHORIZATION,
+                                authorization(ownerId))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(beginRequest))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.documentType").value("CV"))
+                .andExpect(jsonPath("$.sourceDocumentId")
+                        .value(CV_ID.toString()))
+                .andExpect(jsonPath("$.operationStatus").value("PENDING"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String operationId = objectMapper.readTree(accepted)
+                .path("operationId")
+                .asText();
+
+        mockMvc.perform(post(
+                                "/api/v1/applications/{id}/document-replacements",
+                                saved.getId())
+                        .header(
+                                HttpHeaders.AUTHORIZATION,
+                                authorization(ownerId))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(beginRequest))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.operationId").value(operationId));
+        mockMvc.perform(patch(
+                                "/api/v1/applications/{id}/status",
+                                saved.getId())
+                        .header(
+                                HttpHeaders.AUTHORIZATION,
+                                authorization(ownerId))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"APPLIED\"}"))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(patch(
+                                "/api/v1/applications/{id}/document-replacements/{operationId}/replacement-document",
+                                saved.getId(),
+                                operationId)
+                        .headers(producerHeaders(ownerId))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"replacementDocumentId":"%s"}
+                                """.formatted(replacementId)))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.replacementDocumentId")
+                        .value(replacementId.toString()))
+                .andExpect(jsonPath("$.operationStatus").value("RUNNING"));
+        mockMvc.perform(patch(
+                                "/api/v1/applications/{id}/document-replacements/{operationId}/recovery-required",
+                                saved.getId(),
+                                operationId)
+                        .headers(producerHeaders(ownerId)))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.operationStatus")
+                        .value("RECOVERY_REQUIRED"))
+                .andExpect(jsonPath("$.retryable").value(true));
+
+        assertThat(repository.findById(saved.getId()).orElseThrow()
+                        .getCvDocumentId())
+                .isEqualTo(CV_ID.toString());
+
+        replacementWorkflowService.reconcileRegisteredReplacements();
+
+        mockMvc.perform(patch(
+                                "/api/v1/applications/{id}/document-replacements/{operationId}/complete",
+                                saved.getId(),
+                                operationId)
+                        .headers(producerHeaders(ownerId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.operationStatus").value("COMPLETED"))
+                .andExpect(jsonPath("$.replacementDocumentId")
+                        .value(replacementId.toString()))
+                .andExpect(jsonPath("$.cvDocumentId")
+                        .value(replacementId.toString()))
+                .andExpect(jsonPath("$.retryable").value(false));
+
+        ApplicationRecord completed =
+                repository.findById(saved.getId()).orElseThrow();
+        assertThat(completed.getCvDocumentId())
+                .isEqualTo(replacementId.toString());
+        assertThat(completed.getActiveDocumentWorkflowId()).isNull();
+
+        mockMvc.perform(get(
+                                "/api/v1/applications/{id}/document-replacements/{operationId}",
+                                saved.getId(),
+                                operationId)
+                        .header(
+                                HttpHeaders.AUTHORIZATION,
+                                authorization(ownerId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.operationStatus").value("COMPLETED"));
+        mockMvc.perform(post(
+                                "/api/v1/applications/{id}/document-replacements",
+                                saved.getId())
+                        .header(
+                                HttpHeaders.AUTHORIZATION,
+                                authorization(ownerId))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(beginRequest))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.operationId").value(operationId))
+                .andExpect(jsonPath("$.operationStatus").value("COMPLETED"));
+    }
+
+    @Test
     void withdrawGeneratedApplication_WhenStoreFails_ShouldRemainVisibleAndResumeSameOperation()
             throws Exception {
         ApplicationRecord saved = repository.save(ApplicationRecord.builder()
@@ -891,6 +1041,15 @@ class ApplicationRecordControllerIntegrationTest {
 
     private static String authorization(String subject) {
         return "Bearer " + JWKS.validToken(subject);
+    }
+
+    private HttpHeaders producerHeaders(String ownerId) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set(
+                ApplicationServiceIdentityFilter.SERVICE_HEADER,
+                PRODUCER_TOKEN);
+        headers.set(ApplicationOwnerResolver.OWNER_HEADER, ownerId);
+        return headers;
     }
 
     private DocumentVersionReference reference(

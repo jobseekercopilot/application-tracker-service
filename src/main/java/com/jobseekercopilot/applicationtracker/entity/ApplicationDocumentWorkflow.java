@@ -55,6 +55,16 @@ public class ApplicationDocumentWorkflow {
     @Column(nullable = false)
     private boolean coverLetterCleanupRequired;
 
+    @Column(length = 32)
+    private String documentType;
+
+    private String sourceDocumentId;
+
+    private String replacementDocumentId;
+
+    @Column(length = 64)
+    private String requestSha256;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
     private ApplicationActorType actorType;

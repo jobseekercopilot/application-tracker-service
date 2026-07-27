@@ -17,8 +17,9 @@ environment.
 
 ## Contract
 
-The producer OpenAPI version is `3.2.0`. Version `3.2.0` adds backward-compatible
-durable generated-withdrawal status. Version `3.0.0` introduced the breaking
+The producer OpenAPI version is `3.3.0`. Version `3.3.0` adds backward-compatible
+durable document-replacement operations and version `3.2.0` added durable
+generated-withdrawal status. Version `3.0.0` introduced the breaking
 major change that removes the
 legacy raw-entity and owner-wide operations:
 
@@ -103,7 +104,7 @@ partially replaced scenario.
 
 ## Operational use
 
-System Data must adopt this `3.2.0` producer contract before the integrated E2E
+System Data must adopt this `3.3.0` producer contract before the integrated E2E
 journey can use APP-11. Infrastructure must activate the explicit `e2e` profile
 only in the isolated E2E Compose overlay. Base/developer Compose must leave this
 boundary disabled.

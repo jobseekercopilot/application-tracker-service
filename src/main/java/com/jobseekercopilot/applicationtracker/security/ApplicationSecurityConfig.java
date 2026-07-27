@@ -72,6 +72,18 @@ public class ApplicationSecurityConfig {
                         .hasAnyAuthority(
                                 ApplicationAuthorities.USER,
                                 ApplicationAuthorities.PRODUCER)
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/v1/applications/*/document-replacements")
+                        .hasAnyAuthority(
+                                ApplicationAuthorities.USER,
+                                ApplicationAuthorities.PRODUCER)
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/v1/applications/*/document-replacements/*")
+                        .hasAnyAuthority(
+                                ApplicationAuthorities.USER,
+                                ApplicationAuthorities.PRODUCER)
                         .requestMatchers(HttpMethod.GET, "/api/v1/applications/**")
                         .hasAnyAuthority(
                                 ApplicationAuthorities.USER,
@@ -83,6 +95,10 @@ public class ApplicationSecurityConfig {
                         .hasAnyAuthority(
                                 ApplicationAuthorities.USER,
                                 ApplicationAuthorities.PRODUCER)
+                        .requestMatchers(
+                                HttpMethod.PATCH,
+                                "/api/v1/applications/*/document-replacements/**")
+                        .hasAuthority(ApplicationAuthorities.PRODUCER)
                         .requestMatchers("/api/v1/applications/**")
                         .hasAuthority(ApplicationAuthorities.USER)
                         .anyRequest().denyAll())

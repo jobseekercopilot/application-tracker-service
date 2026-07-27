@@ -32,5 +32,8 @@ Even if a separate status-lifecycle change later permits status regression, an
 application with frozen references cannot replace them. Submitted applications
 also require retention-aware deletion.
 
-Durable database migration, transition policy, and cross-service recovery remain
-owned by APP-04, APP-06 and APP-08 respectively.
+Document replacement now reserves a Tracker-owned workflow before Store writes,
+preserves the old reference until verification succeeds, and commits the new
+reference and activity event atomically. See
+`RECOVERABLE_DOCUMENT_WORKFLOWS.md`. Broader repair of pre-existing mismatches
+remains APP-08 work.

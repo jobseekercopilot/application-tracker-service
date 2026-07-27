@@ -1,9 +1,9 @@
 # Recoverable application document workflows
 
 Application Tracker owns the durable outcome of cross-service application
-commands. The first delivered APP-08 workflow is generated-only withdrawal.
-Document replacement and application/document-link reconciliation remain
-tracked by APP-08 and DOCGEN-17.
+commands. APP-08 now delivers generated-only withdrawal and document
+replacement. Broader reconciliation of pre-existing application/document-link
+mismatches remains tracked by APP-08 and DOCGEN-17.
 
 ## Generated withdrawal
 
@@ -86,3 +86,60 @@ events. PostgreSQL migration tests prove that workflow state survives restart.
 No AWS resource, paid provider or GitHub Actions execution is required for this
 evidence.
 
+## Document replacement
+
+`POST /api/v1/applications/{id}/document-replacements` reserves a durable
+Tracker operation before the Gateway creates a replacement document. The
+request contains the document type and the SHA-256 of the validated upload.
+Replaying the same bytes returns the same operation; a different request is
+rejected while the application is locked.
+
+The Gateway then:
+
+1. creates the replacement in the same Store document family using
+   `Idempotency-Key: {operationId}:document`;
+2. registers the exact replacement document with Tracker;
+3. sends the stable operation key to Document Export so DOCX and PDF writes
+   are replay-safe;
+4. approves the completed Store document; and
+5. asks Tracker to verify and atomically commit the new immutable reference.
+
+Tracker is the only component that changes the application reference. The old
+approved reference remains visible until the final commit. Status changes and
+other document mutations are rejected while a replacement is active.
+
+```mermaid
+sequenceDiagram
+    User->>Gateway: replace CV or cover letter
+    Gateway->>Tracker: begin(type, upload SHA-256)
+    Tracker-->>Gateway: 202 operationId + sourceDocumentId
+    Gateway->>Store: create same-family draft (idempotent)
+    Gateway->>Tracker: register replacementDocumentId
+    Gateway->>Export: upload/regenerate (idempotent)
+    Export->>Store: write DOCX/PDF (idempotent)
+    Gateway->>Store: approve replacement
+    Gateway->>Tracker: complete
+    Tracker->>Store: verify owner/job/type/approval
+    Tracker-->>Gateway: 200 committed reference
+```
+
+If a downstream step fails after `begin`, the Gateway records
+`RECOVERY_REQUIRED` and returns `202` with the operation ID, retryability and a
+stable recovery code. It does not claim that the application reference changed.
+Retrying the same file resumes the operation. A scheduled Tracker reconciler
+also completes a registered replacement once Store reports it as approved,
+covering a lost final response.
+
+### Replacement recovery
+
+1. Read `GET /api/v1/applications/{id}/document-replacements/{operationId}`.
+2. Confirm the application still points at `sourceDocumentId`.
+3. If `retryable=true`, replay the original validated upload through the
+   Gateway. Do not manufacture a new operation ID.
+4. If a registered replacement is already approved, allow the reconciler or
+   call the producer-only `.../{operationId}/complete` command.
+5. Escalate `APPLICATION_STATE_MISMATCH` for operator review; it is deliberately
+   non-retryable because another mutation changed the locked state.
+
+Do not delete the source document during replacement recovery. Retention and
+historical-version policy remain separate work.

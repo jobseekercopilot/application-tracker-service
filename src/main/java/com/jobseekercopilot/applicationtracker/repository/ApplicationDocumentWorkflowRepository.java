@@ -23,6 +23,17 @@ public interface ApplicationDocumentWorkflowRepository
                     UUID applicationId,
                     ApplicationDocumentWorkflowType workflowType);
 
+    Optional<ApplicationDocumentWorkflow> findByIdAndUserId(
+            UUID id, String userId);
+
+    Optional<ApplicationDocumentWorkflow>
+            findFirstByUserIdAndApplicationIdAndWorkflowTypeAndDocumentTypeAndRequestSha256OrderByCreatedAtDesc(
+                    String userId,
+                    UUID applicationId,
+                    ApplicationDocumentWorkflowType workflowType,
+                    String documentType,
+                    String requestSha256);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
             select workflow
@@ -34,5 +45,10 @@ public interface ApplicationDocumentWorkflowRepository
 
     List<ApplicationDocumentWorkflow>
             findTop50ByStatusInAndRetryableTrueOrderByUpdatedAtAsc(
+                    List<ApplicationDocumentWorkflowStatus> statuses);
+
+    List<ApplicationDocumentWorkflow>
+            findTop50ByWorkflowTypeAndStatusInAndRetryableTrueAndReplacementDocumentIdIsNotNullOrderByUpdatedAtAsc(
+                    ApplicationDocumentWorkflowType workflowType,
                     List<ApplicationDocumentWorkflowStatus> statuses);
 }

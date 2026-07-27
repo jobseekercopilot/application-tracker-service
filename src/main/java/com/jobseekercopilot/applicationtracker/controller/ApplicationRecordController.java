@@ -2,7 +2,10 @@ package com.jobseekercopilot.applicationtracker.controller;
 
 import com.jobseekercopilot.applicationtracker.dto.ApplicationRecordResponse;
 import com.jobseekercopilot.applicationtracker.dto.ApplicationHistoryResponse;
+import com.jobseekercopilot.applicationtracker.dto.BeginDocumentReplacementRequest;
 import com.jobseekercopilot.applicationtracker.dto.CreateApplicationRequest;
+import com.jobseekercopilot.applicationtracker.dto.DocumentReplacementWorkflowResponse;
+import com.jobseekercopilot.applicationtracker.dto.RegisterReplacementDocumentRequest;
 import com.jobseekercopilot.applicationtracker.dto.UpdateStatusRequest;
 import com.jobseekercopilot.applicationtracker.dto.UpdateDocumentReferenceRequest;
 import com.jobseekercopilot.applicationtracker.dto.WithdrawGeneratedApplicationResponse;
@@ -13,6 +16,7 @@ import com.jobseekercopilot.applicationtracker.security.ApplicationOwnerResolver
 import com.jobseekercopilot.applicationtracker.service.ApplicationCreationResult;
 import com.jobseekercopilot.applicationtracker.service.ApplicationHistoryService;
 import com.jobseekercopilot.applicationtracker.service.ApplicationRecordService;
+import com.jobseekercopilot.applicationtracker.service.ApplicationReplacementWorkflowService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.ArraySchema;
@@ -56,6 +60,7 @@ public class ApplicationRecordController {
     public static final String IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
 
     private final ApplicationRecordService service;
+    private final ApplicationReplacementWorkflowService replacementWorkflowService;
     private final ApplicationHistoryService historyService;
     private final ApplicationOwnerResolver ownerResolver;
     private final ApplicationActorResolver actorResolver;
@@ -284,6 +289,142 @@ public class ApplicationRecordController {
                 id,
                 request,
                 actorResolver.resolve(authentication)));
+    }
+
+    @PostMapping("/{id}/document-replacements")
+    @Operation(
+            summary = "Start or resume a durable document replacement",
+            description = "Reserves one Tracker-owned operation before any replacement document or file is written")
+    @SecurityRequirement(name = "bearerAuth")
+    @SecurityRequirement(name = "serviceToken")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Existing replacement operation replayed"),
+            @ApiResponse(responseCode = "202", description = "Replacement operation accepted"),
+            @ApiResponse(responseCode = "400", description = "Application is locked or request differs from active operation"),
+            @ApiResponse(responseCode = "404", description = "Application record not found")
+    })
+    public ResponseEntity<DocumentReplacementWorkflowResponse>
+            beginDocumentReplacement(
+                    @PathVariable UUID id,
+                    @Valid @RequestBody BeginDocumentReplacementRequest request,
+                    @RequestHeader(
+                            value = ApplicationOwnerResolver.OWNER_HEADER,
+                            required = false)
+                    String requestedOwner,
+                    @Parameter(hidden = true)
+                    Authentication authentication) {
+        String ownerId = ownerResolver.resolve(
+                authentication, requestedOwner);
+        DocumentReplacementWorkflowResponse response =
+                replacementWorkflowService.begin(
+                        ownerId,
+                        id,
+                        request,
+                        actorResolver.resolve(authentication));
+        return "COMPLETED".equals(response.getOperationStatus())
+                ? ResponseEntity.ok(response)
+                : ResponseEntity.accepted().body(response);
+    }
+
+    @PatchMapping(
+            "/{id}/document-replacements/{operationId}/replacement-document")
+    @Operation(summary = "Register the Store document created for a replacement")
+    @SecurityRequirement(name = "serviceToken")
+    public ResponseEntity<DocumentReplacementWorkflowResponse>
+            registerReplacementDocument(
+                    @PathVariable UUID id,
+                    @PathVariable UUID operationId,
+                    @Valid @RequestBody RegisterReplacementDocumentRequest request,
+                    @RequestHeader(
+                            value = ApplicationOwnerResolver.OWNER_HEADER,
+                            required = false)
+                    String requestedOwner,
+                    @Parameter(hidden = true)
+                    Authentication authentication) {
+        String ownerId = ownerResolver.resolve(
+                authentication, requestedOwner);
+        return ResponseEntity.accepted().body(
+                replacementWorkflowService.registerReplacement(
+                        ownerId,
+                        id,
+                        operationId,
+                        request.getReplacementDocumentId()));
+    }
+
+    @PatchMapping(
+            "/{id}/document-replacements/{operationId}/complete")
+    @Operation(summary = "Verify and commit a durable document replacement")
+    @SecurityRequirement(name = "serviceToken")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Replacement committed"),
+            @ApiResponse(responseCode = "400", description = "Workflow or application state mismatch"),
+            @ApiResponse(responseCode = "404", description = "Replacement operation not found"),
+            @ApiResponse(responseCode = "503", description = "Document reference validation unavailable")
+    })
+    public ResponseEntity<DocumentReplacementWorkflowResponse>
+            completeDocumentReplacement(
+                    @PathVariable UUID id,
+                    @PathVariable UUID operationId,
+                    @RequestHeader(
+                            value = ApplicationOwnerResolver.OWNER_HEADER,
+                            required = false)
+                    String requestedOwner,
+                    @Parameter(hidden = true)
+                    Authentication authentication) {
+        String ownerId = ownerResolver.resolve(
+                authentication, requestedOwner);
+        DocumentReplacementWorkflowResponse response =
+                replacementWorkflowService.complete(
+                        ownerId, id, operationId);
+        return "COMPLETED".equals(response.getOperationStatus())
+                ? ResponseEntity.ok(response)
+                : ResponseEntity.accepted().body(response);
+    }
+
+    @PatchMapping(
+            "/{id}/document-replacements/{operationId}/recovery-required")
+    @Operation(summary = "Record a recoverable replacement dependency failure")
+    @SecurityRequirement(name = "serviceToken")
+    public ResponseEntity<DocumentReplacementWorkflowResponse>
+            markDocumentReplacementRecoveryRequired(
+                    @PathVariable UUID id,
+                    @PathVariable UUID operationId,
+                    @RequestHeader(
+                            value = ApplicationOwnerResolver.OWNER_HEADER,
+                            required = false)
+                    String requestedOwner,
+                    @Parameter(hidden = true)
+                    Authentication authentication) {
+        String ownerId = ownerResolver.resolve(
+                authentication, requestedOwner);
+        return ResponseEntity.accepted().body(
+                replacementWorkflowService.markRecoveryRequired(
+                        ownerId,
+                        id,
+                        operationId,
+                        "REPLACEMENT_STEP_FAILED",
+                        true));
+    }
+
+    @GetMapping("/{id}/document-replacements/{operationId}")
+    @Operation(summary = "Get durable document-replacement status")
+    @SecurityRequirement(name = "bearerAuth")
+    @SecurityRequirement(name = "serviceToken")
+    public ResponseEntity<DocumentReplacementWorkflowResponse>
+            documentReplacementStatus(
+                    @PathVariable UUID id,
+                    @PathVariable UUID operationId,
+                    @RequestHeader(
+                            value = ApplicationOwnerResolver.OWNER_HEADER,
+                            required = false)
+                    String requestedOwner,
+                    @Parameter(hidden = true)
+                    Authentication authentication) {
+        String ownerId = ownerResolver.resolve(
+                authentication, requestedOwner);
+        return ResponseEntity.ok(
+                replacementWorkflowService.status(
+                        ownerId, id, operationId));
     }
 
     @PostMapping("/{id}/withdraw-generated")
