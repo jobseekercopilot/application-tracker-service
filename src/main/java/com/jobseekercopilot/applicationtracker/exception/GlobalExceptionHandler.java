@@ -41,6 +41,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler({
             InvalidApplicationTransitionException.class,
+            DocumentReferenceReconciliationConflictException.class,
             ApplicationVersionConflictException.class,
             ApplicationCreationConflictException.class,
             OptimisticLockException.class,
@@ -48,6 +49,7 @@ public class GlobalExceptionHandler {
     })
     public ResponseEntity<ErrorResponse> handleApplicationConflict(Exception ex) {
         String message = ex instanceof InvalidApplicationTransitionException
+                || ex instanceof DocumentReferenceReconciliationConflictException
                 || ex instanceof ApplicationCreationConflictException
                 ? ex.getMessage()
                 : "Application was changed by another request. Refresh and retry.";

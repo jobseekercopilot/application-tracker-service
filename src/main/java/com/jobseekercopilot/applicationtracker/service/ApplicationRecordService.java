@@ -54,6 +54,8 @@ public class ApplicationRecordService {
     private final ApplicationCreationService applicationCreationService;
     private final ApplicationEventRecorder eventRecorder;
     private final ApplicationWithdrawalWorkflowService withdrawalWorkflowService;
+    private final ApplicationDocumentReconciliationService
+            reconciliationService;
 
     public ApplicationRecordResponse createApplication(
             String ownerId,
@@ -152,6 +154,9 @@ public class ApplicationRecordService {
                 && request.getExpectedVersion() != record.getVersion()) {
             throw new ApplicationVersionConflictException();
         }
+        if (newStatus != ApplicationStatus.DOCUMENTS_GENERATED) {
+            reconciliationService.requireHealthy(record);
+        }
         Instant occurredAt = resolveOccurredAt(record, request.getOccurredAt());
         if (newStatus != ApplicationStatus.DOCUMENTS_GENERATED
                 && record.getApplicationUsedCvDocumentId() == null) {
@@ -231,6 +236,7 @@ public class ApplicationRecordService {
                 Instant.now(),
                 actor,
                 documentType + " current approved reference replaced.");
+        reconciliationService.markHealthy(updated);
         log.info("Owner-scoped application document reference updated documentType={}",
                 documentType);
         return mapToResponse(updated);

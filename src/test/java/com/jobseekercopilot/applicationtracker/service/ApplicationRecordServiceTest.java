@@ -49,6 +49,9 @@ class ApplicationRecordServiceTest {
     @Mock
     private ApplicationWithdrawalWorkflowService withdrawalWorkflowService;
 
+    @Mock
+    private ApplicationDocumentReconciliationService reconciliationService;
+
     private ApplicationRecordService service;
 
     private static final UUID CV_ID =
@@ -63,7 +66,8 @@ class ApplicationRecordServiceTest {
                 documentReferenceVerifier,
                 applicationCreationService,
                 eventRecorder,
-                withdrawalWorkflowService);
+                withdrawalWorkflowService,
+                reconciliationService);
     }
 
     @Test

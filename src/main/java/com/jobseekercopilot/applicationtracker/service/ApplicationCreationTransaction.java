@@ -17,6 +17,8 @@ public class ApplicationCreationTransaction {
 
     private final ApplicationRecordRepository repository;
     private final ApplicationEventRecorder eventRecorder;
+    private final ApplicationDocumentReconciliationService
+            reconciliationService;
 
     @Transactional(readOnly = true, propagation = Propagation.REQUIRES_NEW)
     public Optional<ApplicationRecord> findReplayOrRejectDuplicate(
@@ -58,6 +60,7 @@ public class ApplicationCreationTransaction {
         }
         ApplicationRecord created = repository.saveAndFlush(candidate);
         eventRecorder.recordCreated(created, actor);
+        reconciliationService.markHealthy(created);
         return created;
     }
 

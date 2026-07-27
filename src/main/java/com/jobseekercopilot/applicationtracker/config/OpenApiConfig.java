@@ -45,6 +45,9 @@ public class OpenApiConfig {
                                 This service validates and stores exact approved Document Store version
                                 references. Current editable selections are separate from the immutable
                                 versions frozen when an application first progresses.
+                                Durable reconciliation verifies both reference sets against Document Store,
+                                repairs only missing immutable metadata, and reports conflicts without
+                                overwriting historical evidence.
                                 It does NOT store document contents.
                                 
                                 ApplicationStatus values:
@@ -57,7 +60,7 @@ public class OpenApiConfig {
                                 - REJECTED_BY_USER - Offer or opportunity rejected by the user
                                 - WITHDRAWN - User withdrew their application
                                 """)
-                        .version("3.3.0")
+                        .version("3.4.0")
                         .contact(new Contact()
                                 .name("Jobseeker Copilot"))
                         .license(new License()

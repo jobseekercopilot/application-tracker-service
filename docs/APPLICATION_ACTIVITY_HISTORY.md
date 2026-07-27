@@ -2,8 +2,9 @@
 
 Application Tracker is the authoritative source for current application state
 and its immutable activity chronology. Accepted creation, status,
-document-reference, generated-withdrawal and deletion commands append one event
-in the same database transaction as the current-record mutation.
+document-reference, generated-withdrawal, document-reference reconciliation
+and deletion commands append one event in the same database transaction as the
+current-record mutation.
 
 Retries do not invent activity:
 
@@ -54,7 +55,8 @@ V7 gives each inherited current record exactly one `LEGACY_SNAPSHOT`. It
 records the known current status and version and explicitly says earlier
 history is unavailable. It does not fabricate past transitions or dates.
 
-The local PostgreSQL recovery suite proves V1-to-V7 migration, restart,
-backup/restore survival, legacy snapshot accuracy and trigger-enforced
-append-only behavior. This is repository evidence, not a substitute for the
-AWS managed-database restore and retention drill.
+The local PostgreSQL recovery suite proves V1-to-V10 migration, restart,
+backup/restore survival, legacy snapshot accuracy, workflow and reconciliation
+state persistence, and trigger-enforced append-only behavior. This is
+repository evidence, not a substitute for the AWS managed-database restore and
+retention drill.

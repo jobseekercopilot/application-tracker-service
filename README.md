@@ -54,15 +54,19 @@ verification before building the image. The Docker build compiles the test
 sources but does not execute the PostgreSQL Testcontainers suite because a
 standard image build must not receive the host Docker socket.
 
-The version `3.3.0` contract retains the owner-scoped public list and lifecycle
+The version `3.4.0` contract retains the owner-scoped public list and lifecycle
 concurrency contracts while replacing the unsafe raw-entity System Data routes
 with a constrained, versioned, owner-and-scenario-scoped fixture boundary and
 adds backward-compatible activity-history, recoverable generated-withdrawal
-and durable document-replacement operations. A withdrawal or replacement
+and durable document-replacement and document-reference reconciliation
+operations. A withdrawal or replacement
 returns a durable operation ID and either a completed `200` or recovery-pending
 `202`; it never reports success after only part of a cross-service workflow. It
-continues to publish the explicit response and stable authentication,
-authorization, conflict and owner-mismatch error schemas used by consumers.
+also publishes owner-scoped reconciliation state, safely repairs missing
+immutable reference metadata, and blocks lifecycle progression when references
+are unverified. It continues to publish the explicit response and stable
+authentication, authorization, conflict and owner-mismatch error schemas used
+by consumers.
 
 ## Security boundary
 
@@ -87,6 +91,8 @@ versioned fixture schema, scenario isolation rules and operational runbook.
 | `APPLICATION_TRACKER_READER_TOKEN` | Read-only service identity |
 | `ENVIRONMENT_DATA_TOKEN` | Independent non-production fixture identity |
 | `DOCUMENT_STORE_PRODUCER_TOKEN` | Tracker-owned document-workflow command identity |
+| `APPLICATION_DOCUMENT_RECONCILIATION_INITIAL_DELAY_MS` | Delay before the first document-reference reconciliation pass |
+| `APPLICATION_DOCUMENT_RECONCILIATION_DELAY_MS` | Delay between bounded reconciliation passes |
 | `APPLICATION_TRACKER_DATABASE_URL` | PostgreSQL JDBC target |
 | `APPLICATION_TRACKER_DATABASE_USERNAME` | Dedicated database role |
 | `APPLICATION_TRACKER_DATABASE_PASSWORD` | Runtime-injected database secret |

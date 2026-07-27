@@ -154,7 +154,7 @@ credential values in contracts, logs or repositories.
 | Create application | Tracker idempotency key plus application transaction | Reference validation failure creates no row. A database failure creates no row. A lost success response is safely replayed. | APP-05, DOCGEN-17 |
 | Replace selected document | Tracker `application_document_workflows` row and immutable Store reference verification | Delivered: the old reference remains current until an approved same-owner/job/type replacement is atomically committed; retries and lost final responses retain durable recovery state. | APP-08, DOCGEN-17 |
 | Change lifecycle state | Tracker database transaction | Invalid/stale/concurrent commands return stable `409`; successful state, frozen references and event are atomic. | APP-06, APP-07 |
-| Withdraw generated-only application | Tracker `application_document_workflows` row plus Store application-workflow command | Delivered: cleanup is atomic, idempotent and retryable; the application remains visible until completion; the response distinguishes accepted/pending from completed cleanup. APP-08 remains open for replacement and reconciliation. | APP-08, APP-09 |
+| Withdraw generated-only application | Tracker `application_document_workflows` row plus Store application-workflow command | Delivered: cleanup is atomic, idempotent and retryable; the application remains visible until completion; the response distinguishes accepted/pending from completed cleanup. APP-08 remains open for recoverable generation orchestration and integrated E2E evidence. | APP-08, APP-09 |
 | Archive/delete submitted application | Tracker retention decision plus Store retention outcome | Legal/product retention rules can refuse or defer physical deletion; audit history and dependency state remain reconcilable. | APP-09 |
 | Match job results | No durable write; derived response | Tracker timeout/unavailability returns explicit degradation. Ambiguous title/company/location similarity cannot assert an application match. | MATCH-03/04/05/07/08 |
 | Produce report or timeline | No application write; derived response | Missing current/event sources produce an unavailable or explicitly partial report, never invented activity. | REPORT-03/04/06 |
@@ -163,8 +163,11 @@ credential values in contracts, logs or repositories.
 APP-08 implements the concrete workflow mechanism incrementally. Generated
 withdrawal uses a durable Tracker workflow and an atomic Store command.
 Document replacement uses the same durable coordination table, stable
-downstream idempotency keys and scheduled reconciliation.
-Replacement and application/document-link reconciliation remain unfinished.
+downstream idempotency keys and scheduled recovery. Durable document-reference
+reconciliation now verifies current and application-used references, repairs
+only missing immutable metadata and reports conflicting historical evidence
+without overwriting it. Recoverable generation orchestration and integrated
+E2E evidence remain unfinished.
 
 ## Contract and test boundaries
 
@@ -186,7 +189,7 @@ Replacement and application/document-link reconciliation remain unfinished.
 | APP-04 | PostgreSQL is the application system of record. | Managed deployment, encryption, backup and restore evidence. |
 | APP-05 | Creation is explicit, generation-independent and idempotent. | Request identity, uniqueness, manual/external capture and implementation. |
 | APP-06 / APP-07 | Tracker owns lifecycle and append-only history. | Existing transition rollout plus event schema/storage/reopen rules. |
-| APP-08 / APP-09 | Tracker owns durable workflow/application retention; Store owns content retention. | Generated withdrawal and replacement recovery are delivered; broader link reconciliation and approved archive/delete policy remain. |
+| APP-08 / APP-09 | Tracker owns durable workflow/application retention; Store owns content retention. | Generated withdrawal, replacement recovery and broader link reconciliation are delivered; recoverable generation orchestration and approved archive/delete policy remain. |
 | APP-10 / APP-14 / APP-17 | Tracker owns scalable owner queries and final evidence. | Pagination/indexing, test consolidation and private-beta validation. |
 | APP-15 and E2E | Client displays Tracker facts and uses Job Finder as the user command boundary. | Accessible UX and deterministic browser evidence. |
 | CVCL-01 / CVCL-02 | Generation no longer implies application creation. | Draft/approval/billing recovery and contract rollout. |

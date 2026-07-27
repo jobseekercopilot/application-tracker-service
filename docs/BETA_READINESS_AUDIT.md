@@ -117,7 +117,10 @@ workflow: Store cleanup is atomic and replay-safe, the application remains
 visible during recovery, and Job Finder no longer performs duplicate cleanup.
 Document replacement now reserves durable Tracker state before Store writes,
 preserves the old reference until approval, and reconciles lost final responses.
-APP-08 remains open for broader application/document-link reconciliation and
+Document-reference reconciliation now verifies current and frozen
+application-used references, safely fills only missing immutable metadata, and
+records conflicts or dependency outages without overwriting historical
+evidence. APP-08 remains open for recoverable generation orchestration and
 integrated E2E evidence.
 
 ### Unsafe user deletion; System Data boundary implemented, rollout incomplete
@@ -127,7 +130,7 @@ an archive, retention or dependent-document policy. APP-11 removes raw entity
 fixture writes and owner-wide reset/verification, rejects default/unknown/mixed
 profiles and retains the independent APP-03 identity. The producer is intentionally
 incompatible with the old System Data caller; that consumer and the E2E
-Infrastructure profile must adopt the current `3.3.0` contract before this
+Infrastructure profile must adopt the current `3.4.0` contract before this
 blocker can close.
 
 ### Query, privacy and operational limits
@@ -162,7 +165,9 @@ failure, allowing false-positive tracking journeys.
 | Status lifecycle | Repository enforcement and event history complete; client adoption pending |
 | Activity history/timeline | Producer complete; reporting/client adoption pending |
 | Document replacement | Tracker-owned recoverable workflow implemented; integrated E2E evidence pending |
-| Withdrawal/deletion | Unsafe; best-effort cleanup and permanent removal |
+| Document-reference reconciliation | Durable verification, safe metadata repair and owner-scoped status implemented; integrated E2E evidence pending |
+| Generated-only withdrawal | Tracker/Store workflow is durable and replay-safe; integrated E2E evidence pending |
+| Submitted-application deletion | Unsafe; permanent removal lacks approved archive/retention policy |
 | Manual/external application capture | Tracker contract complete; client experience pending |
 | Search/filter/pagination | Absent |
 | Durable storage/migrations | Repository implementation complete; AWS deployment/restore evidence pending |

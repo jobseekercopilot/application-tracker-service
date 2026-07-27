@@ -32,6 +32,13 @@ public record ApplicationCommandActor(
                 ApplicationEventSource.SERVICE);
     }
 
+    public static ApplicationCommandActor system(String identity) {
+        return new ApplicationCommandActor(
+                ApplicationActorType.SYSTEM,
+                identity,
+                ApplicationEventSource.SYSTEM);
+    }
+
     public static ApplicationCommandActor systemData(String identity) {
         return new ApplicationCommandActor(
                 ApplicationActorType.SYSTEM,

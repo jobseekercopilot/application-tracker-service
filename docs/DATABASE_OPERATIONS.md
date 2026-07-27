@@ -99,6 +99,13 @@ rejects event updates and deletes. Existing rows receive one explicit
 `LEGACY_SNAPSHOT` of their known current status/version; the migration does not
 invent prior transitions. Event rows do not cascade with current-row deletion;
 APP-09 remains responsible for approved retention and privacy handling.
+V8 adds durable generated-withdrawal workflow state and locks an application
+while cross-service cleanup is incomplete. V9 extends the same workflow model
+for document replacement with immutable source/replacement identity and request
+hashes. V10 adds one application/document-reference reconciliation row per
+current application, backfills inherited rows as `PENDING`, cascades that
+derived health row when its current application is removed, and extends the
+immutable event constraints for system-attributed safe repairs.
 
 ## Recovery objectives
 
@@ -119,19 +126,23 @@ or restore-drill age breaches these targets.
 
 - creates the inherited V1 schema and record;
 - rejects an invalid status and invalid credentials;
-- upgrades through V2/V3/V4/V5, guarded V6 creation and append-only V7 history;
+- upgrades through V2-V10, including guarded creation, append-only history,
+  recoverable document workflows and reconciliation state;
 - proves inherited rows receive no invented immutable document reference;
 - proves inherited rows receive version zero;
 - proves inherited rows receive `GENERATED` provenance without invented
   idempotency facts;
 - proves ordinary data is not classified as fixture data;
 - proves inherited records receive one truthful legacy snapshot;
+- proves inherited records receive one pending reconciliation record without
+  invented document metadata;
 - repeats the startup migration path against the same database;
 - creates a PostgreSQL custom-format backup and restores it to a fresh database;
 - validates Flyway history and exact representative fields after restore;
 - proves the pre-upgrade reader remains compatible;
 - proves event update/delete is rejected before and after restore; and
-- deletes the restored current record while preserving its event evidence.
+- deletes the restored current record while preserving its event evidence and
+  cascading only its derived reconciliation row.
 
 `PostgresJpaSchemaIntegrationTest` proves Flyway's final PostgreSQL schema
 matches the JPA entity, preserves service-assigned UUIDs, stores an approved

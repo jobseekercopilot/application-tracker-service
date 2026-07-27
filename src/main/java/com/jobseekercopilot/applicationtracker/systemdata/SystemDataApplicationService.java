@@ -3,7 +3,9 @@ package com.jobseekercopilot.applicationtracker.systemdata;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationRecord;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationStatus;
 import com.jobseekercopilot.applicationtracker.exception.InvalidRequestException;
+import com.jobseekercopilot.applicationtracker.repository.ApplicationDocumentReconciliationRepository;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationRecordRepository;
+import com.jobseekercopilot.applicationtracker.service.ApplicationDocumentReconciliationService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,9 +33,20 @@ public class SystemDataApplicationService {
             ApplicationStatus.WITHDRAWN);
 
     private final ApplicationRecordRepository repository;
+    private final ApplicationDocumentReconciliationRepository
+            reconciliationRepository;
+    private final ApplicationDocumentReconciliationService
+            reconciliationService;
 
-    public SystemDataApplicationService(ApplicationRecordRepository repository) {
+    public SystemDataApplicationService(
+            ApplicationRecordRepository repository,
+            ApplicationDocumentReconciliationRepository
+                    reconciliationRepository,
+            ApplicationDocumentReconciliationService
+                    reconciliationService) {
         this.repository = repository;
+        this.reconciliationRepository = reconciliationRepository;
+        this.reconciliationService = reconciliationService;
     }
 
     @Transactional
@@ -60,6 +73,8 @@ public class SystemDataApplicationService {
         List<ApplicationRecord> obsolete = current.stream()
                 .filter(record -> !desiredIds.contains(record.getId()))
                 .toList();
+        reconciliationRepository.deleteAllById(
+                obsolete.stream().map(ApplicationRecord::getId).toList());
         repository.deleteAll(obsolete);
 
         List<ApplicationRecord> desired = request.applications().stream()
@@ -69,7 +84,8 @@ public class SystemDataApplicationService {
                         scenarioId,
                         seed))
                 .toList();
-        repository.saveAll(desired);
+        repository.saveAll(desired)
+                .forEach(reconciliationService::markHealthy);
         return desired.size();
     }
 
@@ -77,6 +93,8 @@ public class SystemDataApplicationService {
     public int reset(UUID userId, String scenarioId) {
         List<ApplicationRecord> records =
                 repository.findByUserIdAndFixtureScenarioId(userId.toString(), scenarioId);
+        reconciliationRepository.deleteAllById(
+                records.stream().map(ApplicationRecord::getId).toList());
         repository.deleteAll(records);
         return records.size();
     }
