@@ -1,6 +1,7 @@
 package com.jobseekercopilot.applicationtracker.dto;
 
 import com.jobseekercopilot.applicationtracker.entity.ApplicationStatus;
+import com.jobseekercopilot.applicationtracker.entity.ApplicationProvenance;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -54,6 +55,12 @@ public class ApplicationRecordResponse {
     private String externalJobId;
 
     @Schema(
+            description = "How the application entered the tracker",
+            example = "MANUAL",
+            requiredMode = Schema.RequiredMode.REQUIRED)
+    private ApplicationProvenance provenance;
+
+    @Schema(
             description = "Title of the job",
             example = "Java Developer",
             requiredMode = Schema.RequiredMode.REQUIRED)
@@ -70,14 +77,12 @@ public class ApplicationRecordResponse {
 
     @Schema(
             description = "ID of the generated CV document (reference only)",
-            example = "cv-123",
-            requiredMode = Schema.RequiredMode.REQUIRED)
+            example = "cv-123")
     private String cvDocumentId;
 
     @Schema(
             description = "ID of the generated cover letter document (reference only)",
-            example = "cl-456",
-            requiredMode = Schema.RequiredMode.REQUIRED)
+            example = "cl-456")
     private String coverLetterDocumentId;
 
     @Schema(description = "Current approved CV selected before application submission")

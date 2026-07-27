@@ -44,6 +44,17 @@ public class ApplicationRecord {
 
     private String externalJobId;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 32)
+    @Builder.Default
+    private ApplicationProvenance provenance = ApplicationProvenance.GENERATED;
+
+    @Column(length = 128)
+    private String idempotencyKey;
+
+    @Column(length = 64)
+    private String createRequestFingerprint;
+
     @Column(nullable = false, length = 300)
     private String jobTitle;
 
@@ -53,7 +64,6 @@ public class ApplicationRecord {
     @Column(length = 300)
     private String location;
 
-    @Column(nullable = false)
     private String cvDocumentId;
 
     private String cvDocumentFamilyId;
@@ -63,7 +73,6 @@ public class ApplicationRecord {
     @Column(length = 64)
     private String cvDocumentContentSha256;
 
-    @Column(nullable = false)
     private String coverLetterDocumentId;
 
     private String coverLetterDocumentFamilyId;
@@ -120,6 +129,12 @@ public class ApplicationRecord {
         }
         if (status == null) {
             status = ApplicationStatus.DOCUMENTS_GENERATED;
+        }
+        if (provenance == null) {
+            provenance = ApplicationProvenance.GENERATED;
+        }
+        if (status == ApplicationStatus.APPLIED && appliedAt == null) {
+            appliedAt = now;
         }
     }
 

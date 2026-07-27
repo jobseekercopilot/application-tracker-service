@@ -21,6 +21,12 @@ public interface ApplicationRecordRepository extends JpaRepository<ApplicationRe
 
     Optional<ApplicationRecord> findByIdAndUserId(UUID id, String userId);
 
+    Optional<ApplicationRecord> findByUserIdAndIdempotencyKey(
+            String userId, String idempotencyKey);
+
+    Optional<ApplicationRecord> findByUserIdAndCanonicalJobIdAndFixtureScenarioIdIsNull(
+            String userId, String canonicalJobId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
             select record

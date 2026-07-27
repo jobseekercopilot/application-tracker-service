@@ -64,14 +64,48 @@ class ApplicationContractPolicyTest {
                 "canonicalJobId",
                 "provider",
                 "externalJobId",
+                "provenance",
                 "jobTitle",
                 "companyName",
-                "cvDocumentId",
-                "coverLetterDocumentId",
                 "status",
                 "createdAt",
                 "updatedAt",
                 "version")));
+        assertTrue(!requiredFields.contains("cvDocumentId"));
+        assertTrue(!requiredFields.contains("coverLetterDocumentId"));
+    }
+
+    @Test
+    void createContractPublishesIdempotentManualAndExternalSemantics()
+            throws Exception {
+        JsonNode contract = objectMapper.readTree(CONTRACT.toFile());
+        JsonNode operation =
+                contract.at("/paths/~1api~1v1~1applications/post");
+
+        Set<String> parameters = StreamSupport.stream(
+                        operation.path("parameters").spliterator(), false)
+                .map(parameter -> parameter.path("name").asText())
+                .collect(Collectors.toSet());
+        assertTrue(parameters.contains("Idempotency-Key"));
+        assertTrue(operation.path("responses").has("200"));
+        assertTrue(operation.path("responses").has("201"));
+        assertTrue(operation.path("responses").has("409"));
+
+        JsonNode createProperties =
+                contract.at("/components/schemas/CreateApplicationRequest/properties");
+        assertTrue(createProperties.has("provenance"));
+        assertTrue(createProperties.has("initialStatus"));
+        assertTrue(createProperties.has("cvDocumentId"));
+        assertTrue(createProperties.has("coverLetterDocumentId"));
+
+        Set<String> required = StreamSupport.stream(
+                        contract.at("/components/schemas/CreateApplicationRequest/required")
+                                .spliterator(),
+                        false)
+                .map(JsonNode::asText)
+                .collect(Collectors.toSet());
+        assertTrue(!required.contains("cvDocumentId"));
+        assertTrue(!required.contains("coverLetterDocumentId"));
     }
 
     @Test

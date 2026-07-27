@@ -7,6 +7,7 @@ import com.jobseekercopilot.applicationtracker.dto.DocumentType;
 import com.jobseekercopilot.applicationtracker.dto.DocumentVersionReference;
 import com.jobseekercopilot.applicationtracker.dto.UpdateStatusRequest;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationRecord;
+import com.jobseekercopilot.applicationtracker.entity.ApplicationProvenance;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationStatus;
 import com.jobseekercopilot.applicationtracker.exception.DocumentReferenceUnavailableException;
 import com.jobseekercopilot.applicationtracker.exception.InvalidDocumentReferenceException;
@@ -110,6 +111,173 @@ class ApplicationRecordControllerIntegrationTest {
                 .andExpect(jsonPath("$.companyName").value("Example Ltd"))
                 .andExpect(jsonPath("$.status").value("DOCUMENTS_GENERATED"))
                 .andExpect(jsonPath("$.id").isNotEmpty());
+    }
+
+    @Test
+    void createManualApplicationWithoutDocuments_ShouldReturnAppliedRecord()
+            throws Exception {
+        CreateApplicationRequest request = CreateApplicationRequest.builder()
+                .userId("manual-owner")
+                .jobId("manual-job-1")
+                .canonicalJobId("manual-job-1")
+                .provider("manual")
+                .externalJobId("manual-job-1")
+                .jobTitle("Support Engineer")
+                .companyName("Example Ltd")
+                .location("London")
+                .provenance(ApplicationProvenance.MANUAL)
+                .build();
+
+        mockMvc.perform(post("/api/v1/applications")
+                        .header(HttpHeaders.AUTHORIZATION, authorization("manual-owner"))
+                        .header(
+                                ApplicationRecordController.IDEMPOTENCY_KEY_HEADER,
+                                "manual-job-1-attempt")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.provenance").value("MANUAL"))
+                .andExpect(jsonPath("$.status").value("APPLIED"))
+                .andExpect(jsonPath("$.appliedAt").isNotEmpty())
+                .andExpect(jsonPath("$.cvDocumentId").doesNotExist())
+                .andExpect(jsonPath("$.coverLetterDocumentId").doesNotExist());
+
+        assertThat(repository.count()).isEqualTo(1);
+    }
+
+    @Test
+    void repeatedIdempotencyKeyAndPayload_ShouldReturnSameRecord() throws Exception {
+        String firstBody = mockMvc.perform(post("/api/v1/applications")
+                        .header(HttpHeaders.AUTHORIZATION, authorization("user-123"))
+                        .header(
+                                ApplicationRecordController.IDEMPOTENCY_KEY_HEADER,
+                                "generated-job-456-attempt")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validRequest())))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String firstId = objectMapper.readTree(firstBody).get("id").asText();
+
+        mockMvc.perform(post("/api/v1/applications")
+                        .header(HttpHeaders.AUTHORIZATION, authorization("user-123"))
+                        .header(
+                                ApplicationRecordController.IDEMPOTENCY_KEY_HEADER,
+                                "generated-job-456-attempt")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validRequest())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(firstId));
+
+        assertThat(repository.count()).isEqualTo(1);
+    }
+
+    @Test
+    void legacyProducerWithoutHeader_ShouldReplayDeterministically() throws Exception {
+        String firstId = objectMapper.readTree(mockMvc.perform(
+                                post("/api/v1/applications")
+                                        .header(
+                                                HttpHeaders.AUTHORIZATION,
+                                                authorization("legacy-owner"))
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .content(objectMapper.writeValueAsString(
+                                                requestForOwner("legacy-owner"))))
+                        .andExpect(status().isCreated())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString())
+                .get("id")
+                .asText();
+
+        mockMvc.perform(post("/api/v1/applications")
+                        .header(
+                                HttpHeaders.AUTHORIZATION,
+                                authorization("legacy-owner"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                requestForOwner("legacy-owner"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(firstId));
+
+        assertThat(repository.count()).isEqualTo(1);
+    }
+
+    @Test
+    void sameCanonicalJobCanBeTrackedByDifferentOwners() throws Exception {
+        mockMvc.perform(post("/api/v1/applications")
+                        .header(HttpHeaders.AUTHORIZATION, authorization("owner-one"))
+                        .header(
+                                ApplicationRecordController.IDEMPOTENCY_KEY_HEADER,
+                                "owner-one-attempt")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                requestForOwner("owner-one"))))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/v1/applications")
+                        .header(HttpHeaders.AUTHORIZATION, authorization("owner-two"))
+                        .header(
+                                ApplicationRecordController.IDEMPOTENCY_KEY_HEADER,
+                                "owner-two-attempt")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                requestForOwner("owner-two"))))
+                .andExpect(status().isCreated());
+
+        assertThat(repository.count()).isEqualTo(2);
+    }
+
+    @Test
+    void reusedIdempotencyKeyWithDifferentPayload_ShouldReturn409() throws Exception {
+        mockMvc.perform(post("/api/v1/applications")
+                        .header(HttpHeaders.AUTHORIZATION, authorization("user-123"))
+                        .header(
+                                ApplicationRecordController.IDEMPOTENCY_KEY_HEADER,
+                                "generated-job-456-attempt")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validRequest())))
+                .andExpect(status().isCreated());
+
+        CreateApplicationRequest conflicting = validRequest();
+        conflicting.setJobTitle("Different title");
+        mockMvc.perform(post("/api/v1/applications")
+                        .header(HttpHeaders.AUTHORIZATION, authorization("user-123"))
+                        .header(
+                                ApplicationRecordController.IDEMPOTENCY_KEY_HEADER,
+                                "generated-job-456-attempt")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(conflicting)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(
+                        "Idempotency key was already used for a different application command."));
+
+        assertThat(repository.count()).isEqualTo(1);
+    }
+
+    @Test
+    void differentKeyForSameCanonicalJob_ShouldReturn409() throws Exception {
+        mockMvc.perform(post("/api/v1/applications")
+                        .header(HttpHeaders.AUTHORIZATION, authorization("user-123"))
+                        .header(
+                                ApplicationRecordController.IDEMPOTENCY_KEY_HEADER,
+                                "generated-job-456-first")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validRequest())))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/v1/applications")
+                        .header(HttpHeaders.AUTHORIZATION, authorization("user-123"))
+                        .header(
+                                ApplicationRecordController.IDEMPOTENCY_KEY_HEADER,
+                                "generated-job-456-second")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validRequest())))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(
+                        "An application for this canonical job is already tracked for the owner."));
+
+        assertThat(repository.count()).isEqualTo(1);
     }
 
     @Test
@@ -536,8 +704,12 @@ class ApplicationRecordControllerIntegrationTest {
     }
 
     private CreateApplicationRequest validRequest() {
+        return requestForOwner("user-123");
+    }
+
+    private CreateApplicationRequest requestForOwner(String owner) {
         return CreateApplicationRequest.builder()
-                .userId("user-123")
+                .userId(owner)
                 .jobId("job-456")
                 .jobTitle("Java Developer")
                 .companyName("Example Ltd")

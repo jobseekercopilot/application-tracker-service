@@ -32,11 +32,17 @@ class ApplicationRecordLifecycleServiceTest {
     @Mock
     private DocumentReferenceVerifier documentReferenceVerifier;
 
+    @Mock
+    private ApplicationCreationService applicationCreationService;
+
     private ApplicationRecordService service;
 
     @BeforeEach
     void setUp() {
-        service = new ApplicationRecordService(repository, documentReferenceVerifier);
+        service = new ApplicationRecordService(
+                repository,
+                documentReferenceVerifier,
+                applicationCreationService);
     }
 
     @Test

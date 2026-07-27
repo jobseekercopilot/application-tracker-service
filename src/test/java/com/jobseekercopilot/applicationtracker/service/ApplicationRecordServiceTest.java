@@ -40,6 +40,9 @@ class ApplicationRecordServiceTest {
     @Mock
     private DocumentReferenceVerifier documentReferenceVerifier;
 
+    @Mock
+    private ApplicationCreationService applicationCreationService;
+
     private ApplicationRecordService service;
 
     private static final UUID CV_ID =
@@ -49,7 +52,10 @@ class ApplicationRecordServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ApplicationRecordService(repository, documentReferenceVerifier);
+        service = new ApplicationRecordService(
+                repository,
+                documentReferenceVerifier,
+                applicationCreationService);
     }
 
     @Test
@@ -76,17 +82,15 @@ class ApplicationRecordServiceTest {
                 .updatedAt(LocalDateTime.now())
                 .build();
 
-        when(documentReferenceVerifier.verify(
-                        "user-123", CV_ID, "job-456", DocumentType.CV))
-                .thenReturn(reference(CV_ID, DocumentType.CV));
-        when(documentReferenceVerifier.verify(
-                        "user-123",
-                        COVER_LETTER_ID,
-                        "job-456",
-                        DocumentType.COVER_LETTER))
-                .thenReturn(reference(COVER_LETTER_ID, DocumentType.COVER_LETTER));
-        when(repository.save(any(ApplicationRecord.class))).thenAnswer(
-                invocation -> invocation.getArgument(0));
+        savedRecord.setCvDocumentFamilyId(CV_ID.toString());
+        savedRecord.setCvDocumentVersion(1);
+        savedRecord.setCvDocumentContentSha256("a".repeat(64));
+        savedRecord.setCoverLetterDocumentFamilyId(COVER_LETTER_ID.toString());
+        savedRecord.setCoverLetterDocumentVersion(1);
+        savedRecord.setCoverLetterDocumentContentSha256("b".repeat(64));
+        when(applicationCreationService.createApplication(
+                        "user-123", null, request))
+                .thenReturn(new ApplicationCreationOutcome(savedRecord, true));
 
         ApplicationRecordResponse response = service.createApplication("user-123", request);
 
@@ -101,7 +105,8 @@ class ApplicationRecordServiceTest {
         assertThat(response.getCvDocumentReference().getVersion()).isEqualTo(1);
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.DOCUMENTS_GENERATED);
 
-        verify(repository).save(any(ApplicationRecord.class));
+        verify(applicationCreationService)
+                .createApplication("user-123", null, request);
     }
 
     @Test

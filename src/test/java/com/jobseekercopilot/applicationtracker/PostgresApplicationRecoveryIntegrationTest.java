@@ -51,7 +51,7 @@ class PostgresApplicationRecoveryIntegrationTest {
                         assertThat(((SQLException) error).getSQLState()).startsWith("28"));
 
         Flyway upgraded = flyway(POSTGRES.getJdbcUrl());
-        assertThat(upgraded.migrate().migrationsExecuted).isEqualTo(4);
+        assertThat(upgraded.migrate().migrationsExecuted).isEqualTo(5);
         upgraded.validate();
 
         try (Connection connection = primaryConnection()) {
@@ -192,7 +192,10 @@ class PostgresApplicationRecoveryIntegrationTest {
                        cv_document_family_id,
                        application_used_cv_document_id,
                        application_used_cover_letter_document_id,
-                       record_version
+                       record_version,
+                       provenance,
+                       idempotency_key,
+                       create_request_fingerprint
                 FROM application_records
                 WHERE id = ?
                 """)) {
@@ -211,6 +214,9 @@ class PostgresApplicationRecoveryIntegrationTest {
                 assertThat(result.getString("application_used_cv_document_id")).isNull();
                 assertThat(result.getString("application_used_cover_letter_document_id")).isNull();
                 assertThat(result.getLong("record_version")).isZero();
+                assertThat(result.getString("provenance")).isEqualTo("GENERATED");
+                assertThat(result.getString("idempotency_key")).isNull();
+                assertThat(result.getString("create_request_fingerprint")).isNull();
             }
         }
     }

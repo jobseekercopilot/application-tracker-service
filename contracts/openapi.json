@@ -54,9 +54,19 @@
     "/api/v1/applications" : {
       "post" : {
         "tags" : [ "Application Records" ],
-        "summary" : "Create an application record",
-        "description" : "Creates a new application record with references to generated documents",
+        "summary" : "Create or replay an application record",
+        "description" : "Creates an authoritative generated, manual or external application.\nRepeating the same owner-scoped Idempotency-Key and payload returns\nthe existing record.\n",
         "operationId" : "createApplication",
+        "parameters" : [ {
+          "name" : "Idempotency-Key",
+          "in" : "header",
+          "description" : "Owner-scoped retry key. Legacy producers without a key receive deterministic request-based idempotency.",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          },
+          "example" : "apply-job-456-attempt-1"
+        } ],
         "requestBody" : {
           "content" : {
             "application/json" : {
@@ -68,6 +78,16 @@
           "required" : true
         },
         "responses" : {
+          "200" : {
+            "description" : "Existing application replayed for the same idempotency key",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApplicationRecordResponse"
+                }
+              }
+            }
+          },
           "400" : {
             "description" : "Validation error or ineligible document reference",
             "content" : {
@@ -80,6 +100,16 @@
           },
           "201" : {
             "description" : "Application record created successfully",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApplicationRecordResponse"
+                }
+              }
+            }
+          },
+          "409" : {
+            "description" : "Idempotency key reuse or duplicate canonical application",
             "content" : {
               "*/*" : {
                 "schema" : {
@@ -185,16 +215,6 @@
           "required" : true
         },
         "responses" : {
-          "200" : {
-            "description" : "Status updated successfully",
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ApplicationRecordResponse"
-                }
-              }
-            }
-          },
           "400" : {
             "description" : "Invalid status value",
             "content" : {
@@ -211,6 +231,16 @@
               "application/json" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200" : {
+            "description" : "Status updated successfully",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApplicationRecordResponse"
                 }
               }
             }
@@ -490,16 +520,6 @@
               }
             }
           },
-          "401" : {
-            "description" : "Missing, invalid or ambiguous authentication",
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/SecurityErrorResponse"
-                }
-              }
-            }
-          },
           "200" : {
             "description" : "Owner-scoped application records",
             "content" : {
@@ -515,6 +535,16 @@
           },
           "403" : {
             "description" : "Authenticated identity lacks reader permission",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SecurityErrorResponse"
+                }
+              }
+            }
+          },
+          "401" : {
+            "description" : "Missing, invalid or ambiguous authentication",
             "content" : {
               "application/json" : {
                 "schema" : {
@@ -748,64 +778,92 @@
         }
       },
       "CreateApplicationRequest" : {
-        "required" : [ "companyName", "coverLetterDocumentId", "cvDocumentId", "jobId", "jobTitle", "userId" ],
+        "required" : [ "companyName", "jobId", "jobTitle", "userId" ],
         "type" : "object",
         "properties" : {
           "userId" : {
+            "maxLength" : 255,
+            "minLength" : 0,
             "type" : "string",
             "description" : "ID of the user creating the application",
             "example" : "user-123"
           },
           "jobId" : {
+            "maxLength" : 255,
+            "minLength" : 0,
             "type" : "string",
             "description" : "ID of the job being applied to",
             "example" : "job-456"
           },
           "canonicalJobId" : {
+            "maxLength" : 255,
+            "minLength" : 0,
             "type" : "string",
             "description" : "Stable cross-provider canonical job identifier",
             "example" : "job_abc123"
           },
           "provider" : {
+            "maxLength" : 64,
+            "minLength" : 0,
             "type" : "string",
             "description" : "Job provider name",
             "example" : "REED"
           },
           "externalJobId" : {
+            "maxLength" : 255,
+            "minLength" : 0,
             "type" : "string",
             "description" : "Provider-specific job identifier",
             "example" : "123456"
           },
           "jobTitle" : {
+            "maxLength" : 300,
+            "minLength" : 0,
             "type" : "string",
             "description" : "Title of the job",
             "example" : "Java Developer"
           },
           "companyName" : {
+            "maxLength" : 300,
+            "minLength" : 0,
             "type" : "string",
             "description" : "Name of the company offering the job",
             "example" : "Example Ltd"
           },
           "location" : {
+            "maxLength" : 300,
+            "minLength" : 0,
             "type" : "string",
             "description" : "Job location",
             "example" : "Dorking"
           },
           "cvDocumentId" : {
             "type" : "string",
-            "description" : "Approved CV version ID in Document Store",
+            "description" : "Approved CV version ID in Document Store; optional for manual/external applications",
             "format" : "uuid"
           },
           "coverLetterDocumentId" : {
             "type" : "string",
-            "description" : "Approved cover-letter version ID in Document Store",
+            "description" : "Approved cover-letter version ID in Document Store; optional for manual/external applications",
             "format" : "uuid"
+          },
+          "provenance" : {
+            "type" : "string",
+            "description" : "How the application entered the tracker. Defaults to GENERATED for backwards-compatible producers.",
+            "example" : "MANUAL",
+            "enum" : [ "GENERATED", "MANUAL", "EXTERNAL" ]
+          },
+          "initialStatus" : {
+            "type" : "string",
+            "description" : "Initial lifecycle state. GENERATED may start as DOCUMENTS_GENERATED or APPLIED; MANUAL and EXTERNAL start as APPLIED.",
+            "example" : "APPLIED",
+            "enum" : [ "DOCUMENTS_GENERATED", "APPLIED", "INTERVIEW", "UNSUCCESSFUL", "OFFER", "ACCEPTED", "REJECTED_BY_USER", "WITHDRAWN" ]
           }
         },
         "description" : "Request to create a new application record"
       },
       "ApplicationRecordResponse" : {
-        "required" : [ "canonicalJobId", "companyName", "coverLetterDocumentId", "createdAt", "cvDocumentId", "externalJobId", "id", "jobId", "jobTitle", "provider", "status", "updatedAt", "userId", "version" ],
+        "required" : [ "canonicalJobId", "companyName", "createdAt", "externalJobId", "id", "jobId", "jobTitle", "provenance", "provider", "status", "updatedAt", "userId", "version" ],
         "type" : "object",
         "properties" : {
           "id" : {
@@ -838,6 +896,12 @@
             "type" : "string",
             "description" : "Provider-specific job identifier",
             "example" : "123456"
+          },
+          "provenance" : {
+            "type" : "string",
+            "description" : "How the application entered the tracker",
+            "example" : "MANUAL",
+            "enum" : [ "GENERATED", "MANUAL", "EXTERNAL" ]
           },
           "jobTitle" : {
             "type" : "string",

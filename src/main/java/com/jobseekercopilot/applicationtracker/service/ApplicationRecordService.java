@@ -48,48 +48,32 @@ public class ApplicationRecordService {
 
     private final ApplicationRecordRepository repository;
     private final DocumentReferenceVerifier documentReferenceVerifier;
+    private final ApplicationCreationService applicationCreationService;
 
-    @Transactional
     public ApplicationRecordResponse createApplication(
             String ownerId,
             CreateApplicationRequest request) {
-        long startedAt = System.nanoTime();
-        DocumentVersionReference cvReference = documentReferenceVerifier.verify(
-                ownerId, request.getCvDocumentId(), request.getJobId(), DocumentType.CV);
-        DocumentVersionReference coverLetterReference = documentReferenceVerifier.verify(
-                ownerId,
-                request.getCoverLetterDocumentId(),
-                request.getJobId(),
-                DocumentType.COVER_LETTER);
-        ApplicationRecord record = ApplicationRecord.builder()
-                .userId(ownerId)
-                .jobId(request.getJobId())
-                .canonicalJobId(firstNonBlank(request.getCanonicalJobId(), request.getJobId()))
-                .provider(firstNonBlank(request.getProvider(), "REED"))
-                .externalJobId(firstNonBlank(request.getExternalJobId(), request.getJobId()))
-                .jobTitle(request.getJobTitle())
-                .companyName(request.getCompanyName())
-                .location(request.getLocation())
-                .cvDocumentId(cvReference.getDocumentId().toString())
-                .cvDocumentFamilyId(cvReference.getDocumentFamilyId().toString())
-                .cvDocumentVersion(cvReference.getVersion())
-                .cvDocumentContentSha256(cvReference.getContentSha256())
-                .coverLetterDocumentId(coverLetterReference.getDocumentId().toString())
-                .coverLetterDocumentFamilyId(
-                        coverLetterReference.getDocumentFamilyId().toString())
-                .coverLetterDocumentVersion(coverLetterReference.getVersion())
-                .coverLetterDocumentContentSha256(
-                        coverLetterReference.getContentSha256())
-                .status(ApplicationStatus.DOCUMENTS_GENERATED)
-                .build();
+        return createApplication(ownerId, null, request).application();
+    }
 
-        ApplicationRecord saved = repository.save(record);
-        log.info("Application created provider={} cvDocumentLinked={} coverLetterDocumentLinked={} durationMs={}",
+    public ApplicationCreationResult createApplication(
+            String ownerId,
+            String idempotencyKey,
+            CreateApplicationRequest request) {
+        long startedAt = System.nanoTime();
+        ApplicationCreationOutcome outcome =
+                applicationCreationService.createApplication(
+                        ownerId, idempotencyKey, request);
+        ApplicationRecord saved = outcome.record();
+        log.info("Application create resolved provider={} provenance={} created={} cvDocumentLinked={} coverLetterDocumentLinked={} durationMs={}",
                 saved.getProvider(),
+                saved.getProvenance(),
+                outcome.created(),
                 saved.getCvDocumentId() != null,
                 saved.getCoverLetterDocumentId() != null,
                 (System.nanoTime() - startedAt) / 1_000_000);
-        return mapToResponse(saved);
+        return new ApplicationCreationResult(
+                mapToResponse(saved), outcome.created());
     }
 
     public ApplicationRecordResponse getApplicationById(String ownerId, UUID id) {
@@ -231,6 +215,7 @@ public class ApplicationRecordService {
                 .canonicalJobId(record.getCanonicalJobId())
                 .provider(record.getProvider())
                 .externalJobId(record.getExternalJobId())
+                .provenance(record.getProvenance())
                 .jobTitle(record.getJobTitle())
                 .companyName(record.getCompanyName())
                 .location(record.getLocation())
@@ -369,10 +354,6 @@ public class ApplicationRecordService {
             String ownerId, UUID id) {
         return repository.findForUpdateByIdAndUserId(id, ownerId)
                 .orElseThrow(ResourceNotFoundException::applicationNotFound);
-    }
-
-    private String firstNonBlank(String preferred, String fallback) {
-        return preferred == null || preferred.isBlank() ? fallback : preferred;
     }
 
     private ApplicationStatus parseSupportedStatus(String status) {

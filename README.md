@@ -12,6 +12,9 @@ Infrastructure
 The approved application-domain ownership, trust, command/query, failure and
 test boundaries are defined in
 [`docs/APPLICATION_ARCHITECTURE_AND_OWNERSHIP.md`](docs/APPLICATION_ARCHITECTURE_AND_OWNERSHIP.md).
+The authoritative generated, manual and external creation contract, including
+owner-scoped retry and duplicate semantics, is documented in
+[`docs/APPLICATION_CREATION.md`](docs/APPLICATION_CREATION.md).
 
 ## Build
 
@@ -32,6 +35,11 @@ Application status changes follow a documented forward-only lifecycle. Invalid
 or stale updates return `409`, same-status retries are idempotent, and every
 response publishes the record's optimistic `version`. See
 [`docs/APPLICATION_LIFECYCLE.md`](docs/APPLICATION_LIFECYCLE.md).
+
+Create commands support explicit `GENERATED`, `MANUAL` and `EXTERNAL`
+provenance. Manual/external applications can be tracked without generated
+documents. Owner-scoped idempotency keys and PostgreSQL uniqueness make lost
+responses and concurrent retries converge on one application record.
 
 The producer-owned OpenAPI contract is in `contracts/openapi.json`.
 `OpenApiExportTest` generates the runtime document and fails `mvn clean verify`

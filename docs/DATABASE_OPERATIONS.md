@@ -52,9 +52,23 @@ That switch is forbidden in a production deployment.
 3. Review every new
    `src/main/resources/db/migration/common/V*__*.sql` file. Never edit an
    applied migration.
-4. Run `mvn -B --no-transfer-progress clean verify`; the verification includes
+4. Before V6, run the duplicate preflight against the private database:
+
+   ```sql
+   SELECT user_id, canonical_job_id, COUNT(*)
+   FROM application_records
+   WHERE canonical_job_id IS NOT NULL
+     AND fixture_scenario_id IS NULL
+   GROUP BY user_id, canonical_job_id
+   HAVING COUNT(*) > 1;
+   ```
+
+   Stop if any row is returned. APP-05 deliberately does not choose or delete a
+   user's duplicate history. Resolve each duplicate through an approved,
+   backed-up data decision before retrying the migration.
+5. Run `mvn -B --no-transfer-progress clean verify`; the verification includes
    real PostgreSQL migration, JPA mapping, restart, backup and restore evidence.
-5. Deploy one instance, allow Flyway to migrate, then require health and
+6. Deploy one instance, allow Flyway to migrate, then require health and
    migration validation before the rollout continues.
 
 Migrations are forward-only. V2, V3, V4 and V5 are additive and the recovery test
@@ -73,6 +87,12 @@ references. Existing rows remain readable and are not assigned invented
 document versions or checksums.
 V5 adds a non-negative `record_version`, backfilled to zero, for JPA optimistic
 locking. It does not change the columns consumed by pre-upgrade readers.
+V6 records creation provenance and owner-scoped idempotency, relaxes current
+document IDs for approved manual/external applications, and adds partial unique
+indexes for owner/idempotency and non-fixture owner/canonical-job identity.
+Inherited rows are marked `GENERATED`; their unknown command key/fingerprint
+remain `NULL`. V6 fails rather than silently choosing among pre-existing
+owner/canonical-job duplicates.
 
 ## Recovery objectives
 
@@ -93,9 +113,11 @@ or restore-drill age breaches these targets.
 
 - creates the inherited V1 schema and record;
 - rejects an invalid status and invalid credentials;
-- upgrades through the additive V2/V3/V4/V5 migrations;
+- upgrades through V2/V3/V4/V5 and the guarded V6 creation migration;
 - proves inherited rows receive no invented immutable document reference;
 - proves inherited rows receive version zero;
+- proves inherited rows receive `GENERATED` provenance without invented
+  idempotency facts;
 - proves ordinary data is not classified as fixture data;
 - repeats the startup migration path against the same database;
 - creates a PostgreSQL custom-format backup and restores it to a fresh database;
@@ -104,8 +126,10 @@ or restore-drill age breaches these targets.
 - deletes the restored synthetic record and proves absence.
 
 `PostgresJpaSchemaIntegrationTest` proves Flyway's final PostgreSQL schema
-matches the JPA entity, preserves service-assigned UUIDs and rejects the second
-of two writers that loaded the same record version.
+matches the JPA entity, preserves service-assigned UUIDs, stores an approved
+manual application without documents, makes simultaneous identical create
+commands return one application identity, and rejects the second of two writers
+that loaded the same record version.
 
 This local drill does not constitute AWS backup, encryption or disaster-recovery
 evidence. Before beta enablement, an operator must restore an approved

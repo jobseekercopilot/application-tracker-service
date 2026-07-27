@@ -42,11 +42,13 @@ public class GlobalExceptionHandler {
     @ExceptionHandler({
             InvalidApplicationTransitionException.class,
             ApplicationVersionConflictException.class,
+            ApplicationCreationConflictException.class,
             OptimisticLockException.class,
             OptimisticLockingFailureException.class
     })
     public ResponseEntity<ErrorResponse> handleApplicationConflict(Exception ex) {
         String message = ex instanceof InvalidApplicationTransitionException
+                || ex instanceof ApplicationCreationConflictException
                 ? ex.getMessage()
                 : "Application was changed by another request. Refresh and retry.";
         ErrorResponse error = ErrorResponse.builder()

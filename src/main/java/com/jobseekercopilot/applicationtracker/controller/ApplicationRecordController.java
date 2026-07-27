@@ -8,6 +8,7 @@ import com.jobseekercopilot.applicationtracker.dto.WithdrawGeneratedApplicationR
 import com.jobseekercopilot.applicationtracker.exception.ErrorResponse;
 import com.jobseekercopilot.applicationtracker.exception.SecurityErrorResponse;
 import com.jobseekercopilot.applicationtracker.security.ApplicationOwnerResolver;
+import com.jobseekercopilot.applicationtracker.service.ApplicationCreationResult;
 import com.jobseekercopilot.applicationtracker.service.ApplicationRecordService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -44,24 +45,46 @@ import java.util.UUID;
 @Tag(name = "Application Records", description = "Endpoints for tracking job applications")
 public class ApplicationRecordController {
 
+    public static final String IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
+
     private final ApplicationRecordService service;
     private final ApplicationOwnerResolver ownerResolver;
 
     @PostMapping
-    @Operation(summary = "Create an application record", description = "Creates a new application record with references to generated documents")
+    @Operation(
+            summary = "Create or replay an application record",
+            description = """
+                    Creates an authoritative generated, manual or external application.
+                    Repeating the same owner-scoped Idempotency-Key and payload returns
+                    the existing record.
+                    """)
     @SecurityRequirement(name = "bearerAuth")
     @SecurityRequirement(name = "serviceToken")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Application record created successfully"),
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Existing application replayed for the same idempotency key"),
             @ApiResponse(responseCode = "400", description = "Validation error or ineligible document reference"),
+            @ApiResponse(
+                    responseCode = "409",
+                    description = "Idempotency key reuse or duplicate canonical application"),
             @ApiResponse(responseCode = "503", description = "Document reference validation unavailable")
     })
     public ResponseEntity<ApplicationRecordResponse> createApplication(
             @Valid @RequestBody CreateApplicationRequest request,
+            @Parameter(
+                    description = "Owner-scoped retry key. Legacy producers without a key receive deterministic request-based idempotency.",
+                    example = "apply-job-456-attempt-1")
+            @RequestHeader(value = IDEMPOTENCY_KEY_HEADER, required = false)
+            String idempotencyKey,
             @Parameter(hidden = true) Authentication authentication) {
         String ownerId = ownerResolver.resolve(authentication, request.getUserId());
-        ApplicationRecordResponse response = service.createApplication(ownerId, request);
-        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+        ApplicationCreationResult result =
+                service.createApplication(ownerId, idempotencyKey, request);
+        return ResponseEntity
+                .status(result.created() ? HttpStatus.CREATED : HttpStatus.OK)
+                .body(result.application());
     }
 
     @GetMapping("/{id}")

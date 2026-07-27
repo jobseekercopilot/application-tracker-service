@@ -46,6 +46,12 @@ enablement or represent a durable, access-controlled source of truth.
   Authentication, Job Service and Document Store retain authority for their
   own domains. It assigns trust, command/query, failure and test boundaries
   without implementing the linked delivery issues.
+- APP-05 implements the explicit creation boundary in Application Tracker:
+  generated, manual and external provenance; optional documents where allowed;
+  immutable application-time job identity/snapshot fields; owner-scoped
+  idempotency; and one database-enforced application per owner/canonical job.
+  Real PostgreSQL tests prove concurrent identical commands converge on one
+  record. Producer and client rollout remain on their coordinated issues.
 
 ## Critical findings
 
@@ -63,8 +69,9 @@ APP-01 records the approved cross-service boundary in
 `APPLICATION_ARCHITECTURE_AND_OWNERSHIP.md`. In particular, generation does
 not imply application creation, edge gateways cannot own durable cleanup, and
 Reporting/Matching consume derived read models rather than inventing
-application facts. APP-05, APP-07, APP-08, APP-09 and their consumer issues
-still implement those decisions.
+application facts. APP-05 now implements the Tracker-side create command;
+APP-07, APP-08, APP-09 and the APP-05 consumer issues still implement the
+remaining decisions.
 
 ### Durable repository storage implemented; deployed recovery evidence incomplete
 
@@ -88,13 +95,14 @@ record's latest update time, so prior events disappear or are misdated. APP-07
 must add immutable transition history before the full activity timeline is
 beta-ready.
 
-### Generation is coupled to tracking
+### Tracker creation is decoupled; producer and client rollout incomplete
 
-Creating a record requires both generated-document IDs and always starts at
-`DOCUMENTS_GENERATED`. The service cannot represent a manually entered or
-externally submitted application without generated documents. Repeated generation
-can create duplicate application rows because no authoritative idempotency key or
-unique user/job/application identity exists.
+APP-05 lets Application Tracker create generated, manual and external records
+independently of generation. Documents are optional for manual/external
+applications, retries are owner-scoped and idempotent, and PostgreSQL prevents
+duplicate owner/canonical-job records. CV generation still automatically calls
+this contract, and the client does not yet expose a manual/external creation
+journey. CVCL-01, DOCGEN-17 and the client issue retain those rollout scopes.
 
 ### Cross-service consistency is not atomic
 
@@ -132,21 +140,22 @@ runtime-checks the tracked OpenAPI document. Its conflicting MIT metadata is
 replaced with the repository's proprietary classification. APP-03 adds
 authentication, cross-user access, System Data isolation and privacy-redaction
 coverage. APP-04 and APP-06 add real migrations, recovery, valid-transition and
-concurrency coverage. Tests still do not cover duplicate create, pagination or
-cleanup failures. Browser E2E steps can wait and return without asserting
+concurrency coverage. APP-05 adds duplicate, replay and concurrent create
+coverage. Tests still do not cover pagination or cleanup failures. Browser E2E
+steps can wait and return without asserting
 failure, allowing false-positive tracking journeys.
 
 ## Functional classification
 
 | Capability | Result |
 |---|---|
-| Create tracked application | Incomplete; generated-document-only and non-idempotent |
+| Create tracked application | Tracker contract complete; producer/client rollout pending |
 | User/application/document lookup | Owner-scoped in the service; consumer rollout pending |
 | Status lifecycle | Repository enforcement complete; client adoption and immutable APP-07 history pending |
 | Activity history/timeline | Absent; clients synthesize lossy events |
 | Document replacement | Incomplete; cross-service consistency gap |
 | Withdrawal/deletion | Unsafe; best-effort cleanup and permanent removal |
-| Manual/external application capture | Absent |
+| Manual/external application capture | Tracker contract complete; client experience pending |
 | Search/filter/pagination | Absent |
 | Durable storage/migrations | Repository implementation complete; AWS deployment/restore evidence pending |
 | Observability/operations | Basic request logs and health only |
