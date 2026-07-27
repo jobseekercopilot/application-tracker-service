@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ApplicationCreationTransaction {
 
     private final ApplicationRecordRepository repository;
+    private final ApplicationEventRecorder eventRecorder;
 
     @Transactional(readOnly = true, propagation = Propagation.REQUIRES_NEW)
     public Optional<ApplicationRecord> findReplayOrRejectDuplicate(
@@ -39,7 +40,8 @@ public class ApplicationCreationTransaction {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public ApplicationRecord create(ApplicationRecord candidate) {
+    public ApplicationRecord create(
+            ApplicationRecord candidate, ApplicationCommandActor actor) {
         Optional<ApplicationRecord> replay =
                 repository.findByUserIdAndIdempotencyKey(
                         candidate.getUserId(), candidate.getIdempotencyKey());
@@ -54,7 +56,9 @@ public class ApplicationCreationTransaction {
                 .isPresent()) {
             throw new DuplicateApplicationException();
         }
-        return repository.saveAndFlush(candidate);
+        ApplicationRecord created = repository.saveAndFlush(candidate);
+        eventRecorder.recordCreated(created, actor);
+        return created;
     }
 
     @Transactional(readOnly = true, propagation = Propagation.REQUIRES_NEW)

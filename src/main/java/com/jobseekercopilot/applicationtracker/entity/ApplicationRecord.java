@@ -15,6 +15,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.time.Clock;
 import java.util.UUID;
 
 @Entity
@@ -120,7 +121,7 @@ public class ApplicationRecord {
 
     @PrePersist
     protected void onCreate() {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(Clock.systemUTC());
         if (createdAt == null) {
             createdAt = now;
         }
@@ -140,9 +141,9 @@ public class ApplicationRecord {
 
     @PreUpdate
     protected void onUpdate() {
-        updatedAt = LocalDateTime.now();
+        updatedAt = LocalDateTime.now(Clock.systemUTC());
         if (status == ApplicationStatus.APPLIED && appliedAt == null) {
-            appliedAt = LocalDateTime.now();
+            appliedAt = LocalDateTime.now(Clock.systemUTC());
         }
     }
 }

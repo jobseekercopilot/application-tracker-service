@@ -51,13 +51,14 @@ class PostgresApplicationRecoveryIntegrationTest {
                         assertThat(((SQLException) error).getSQLState()).startsWith("28"));
 
         Flyway upgraded = flyway(POSTGRES.getJdbcUrl());
-        assertThat(upgraded.migrate().migrationsExecuted).isEqualTo(5);
+        assertThat(upgraded.migrate().migrationsExecuted).isEqualTo(6);
         upgraded.validate();
 
         try (Connection connection = primaryConnection()) {
             assertUpgradedApplication(connection, applicationId);
             assertLegacyReaderStillWorks(connection, applicationId);
             assertFixtureIndexIsScoped(connection);
+            assertLegacySnapshotEvent(connection, applicationId);
         }
 
         // Discard application-side Flyway/JDBC state and repeat the startup path
@@ -66,6 +67,7 @@ class PostgresApplicationRecoveryIntegrationTest {
                 .isZero();
         try (Connection afterRestart = primaryConnection()) {
             assertUpgradedApplication(afterRestart, applicationId);
+            assertLegacySnapshotEvent(afterRestart, applicationId);
         }
 
         assertExecSucceeded(POSTGRES.execInContainer(
@@ -88,12 +90,15 @@ class PostgresApplicationRecoveryIntegrationTest {
         flyway(restoredJdbcUrl()).validate();
         try (Connection restored = restoredConnection()) {
             assertUpgradedApplication(restored, applicationId);
+            assertLegacySnapshotEvent(restored, applicationId);
+            assertEventHistoryIsAppendOnly(restored, applicationId);
             try (PreparedStatement delete = restored.prepareStatement(
                     "DELETE FROM application_records WHERE id = ?")) {
                 delete.setObject(1, applicationId);
                 assertThat(delete.executeUpdate()).isEqualTo(1);
             }
             assertThat(count(restored, applicationId)).isZero();
+            assertLegacySnapshotEvent(restored, applicationId);
         }
     }
 
@@ -248,6 +253,73 @@ class PostgresApplicationRecoveryIntegrationTest {
             assertThat(result.next()).isTrue();
             assertThat(result.getString("indexdef"))
                     .contains("fixture_scenario_id IS NOT NULL");
+        }
+    }
+
+    private void assertLegacySnapshotEvent(
+            Connection connection, UUID applicationId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT event_type, from_status, to_status, actor_type,
+                       actor_id, source, occurred_at, recorded_at,
+                       reason, record_version
+                FROM application_events
+                WHERE application_id = ?
+                """)) {
+            statement.setObject(1, applicationId);
+            try (ResultSet result = statement.executeQuery()) {
+                assertThat(result.next()).isTrue();
+                assertThat(result.getString("event_type"))
+                        .isEqualTo("LEGACY_SNAPSHOT");
+                assertThat(result.getString("from_status")).isNull();
+                assertThat(result.getString("to_status")).isEqualTo("APPLIED");
+                assertThat(result.getString("actor_type")).isEqualTo("SYSTEM");
+                assertThat(result.getString("actor_id")).isEqualTo("migration-v7");
+                assertThat(result.getString("source")).isEqualTo("MIGRATION");
+                assertThat(result.getObject("occurred_at")).isNotNull();
+                assertThat(result.getObject("recorded_at")).isNotNull();
+                assertThat(result.getString("reason"))
+                        .contains("history before event tracking is unavailable");
+                assertThat(result.getLong("record_version")).isZero();
+                assertThat(result.next()).isFalse();
+            }
+        }
+    }
+
+    private void assertEventHistoryIsAppendOnly(
+            Connection connection, UUID applicationId) {
+        assertThatThrownBy(() -> {
+            try (PreparedStatement update = connection.prepareStatement("""
+                    UPDATE application_events
+                    SET reason = 'rewritten'
+                    WHERE application_id = ?
+                    """)) {
+                update.setObject(1, applicationId);
+                update.executeUpdate();
+            }
+        }).isInstanceOf(SQLException.class)
+                .hasMessageContaining("append-only");
+        rollback(connection);
+
+        assertThatThrownBy(() -> {
+            try (PreparedStatement delete = connection.prepareStatement("""
+                    DELETE FROM application_events
+                    WHERE application_id = ?
+                    """)) {
+                delete.setObject(1, applicationId);
+                delete.executeUpdate();
+            }
+        }).isInstanceOf(SQLException.class)
+                .hasMessageContaining("append-only");
+        rollback(connection);
+    }
+
+    private void rollback(Connection connection) {
+        try {
+            if (!connection.getAutoCommit()) {
+                connection.rollback();
+            }
+        } catch (SQLException ignored) {
+            // The next assertion will surface an unusable connection.
         }
     }
 

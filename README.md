@@ -15,6 +15,9 @@ test boundaries are defined in
 The authoritative generated, manual and external creation contract, including
 owner-scoped retry and duplicate semantics, is documented in
 [`docs/APPLICATION_CREATION.md`](docs/APPLICATION_CREATION.md).
+The immutable event model, actual milestone timestamps and owner-scoped
+paginated history contract are documented in
+[`docs/APPLICATION_ACTIVITY_HISTORY.md`](docs/APPLICATION_ACTIVITY_HISTORY.md).
 
 ## Build
 
@@ -33,7 +36,9 @@ backup and restore without calling AWS or any paid service. See
 
 Application status changes follow a documented forward-only lifecycle. Invalid
 or stale updates return `409`, same-status retries are idempotent, and every
-response publishes the record's optimistic `version`. See
+accepted mutation appends an immutable actor/source-attributed event in the
+same transaction. Every response publishes the record's optimistic `version`.
+See
 [`docs/APPLICATION_LIFECYCLE.md`](docs/APPLICATION_LIFECYCLE.md).
 
 Create commands support explicit `GENERATED`, `MANUAL` and `EXTERNAL`
@@ -49,9 +54,10 @@ verification before building the image. The Docker build compiles the test
 sources but does not execute the PostgreSQL Testcontainers suite because a
 standard image build must not receive the host Docker socket.
 
-The version `3.0.0` contract retains the owner-scoped public list and lifecycle
+The version `3.1.0` contract retains the owner-scoped public list and lifecycle
 concurrency contracts while replacing the unsafe raw-entity System Data routes
-with a constrained, versioned, owner-and-scenario-scoped fixture boundary. It
+with a constrained, versioned, owner-and-scenario-scoped fixture boundary and
+adds backward-compatible activity-history operations and timestamp fields. It
 continues to publish the explicit response and stable authentication,
 authorization, conflict and owner-mismatch error schemas used by consumers.
 

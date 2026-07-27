@@ -9,7 +9,7 @@
     "license" : {
       "name" : "Proprietary and confidential"
     },
-    "version" : "3.0.0"
+    "version" : "3.1.0"
   },
   "servers" : [ {
     "url" : "http://localhost:8088",
@@ -215,26 +215,6 @@
           "required" : true
         },
         "responses" : {
-          "400" : {
-            "description" : "Invalid status value",
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409" : {
-            "description" : "Invalid lifecycle transition or stale/concurrent record version",
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
           "200" : {
             "description" : "Status updated successfully",
             "content" : {
@@ -247,6 +227,26 @@
           },
           "404" : {
             "description" : "Application record not found",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400" : {
+            "description" : "Invalid status value",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409" : {
+            "description" : "Invalid lifecycle transition or stale/concurrent record version",
             "content" : {
               "application/json" : {
                 "schema" : {
@@ -495,6 +495,80 @@
         } ]
       }
     },
+    "/api/v1/applications/{id}/history" : {
+      "get" : {
+        "tags" : [ "Application Records" ],
+        "summary" : "Get immutable application activity history",
+        "description" : "Returns an owner-scoped chronological page and whether its latest event reconciles with current application state.",
+        "operationId" : "getApplicationHistory",
+        "parameters" : [ {
+          "name" : "id",
+          "in" : "path",
+          "description" : "UUID of the application record",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        }, {
+          "name" : "X-Application-Owner",
+          "in" : "header",
+          "description" : "Required owner context for approved service identities",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "name" : "page",
+          "in" : "query",
+          "required" : false,
+          "schema" : {
+            "minimum" : 0,
+            "type" : "integer",
+            "format" : "int32",
+            "default" : 0
+          }
+        }, {
+          "name" : "size",
+          "in" : "query",
+          "required" : false,
+          "schema" : {
+            "maximum" : 100,
+            "minimum" : 1,
+            "type" : "integer",
+            "format" : "int32",
+            "default" : 50
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "Ordered activity page returned",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApplicationHistoryResponse"
+                }
+              }
+            }
+          },
+          "404" : {
+            "description" : "Application record not found",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        }, {
+          "serviceToken" : [ ]
+        } ]
+      }
+    },
     "/api/v1/applications/user/{userId}" : {
       "get" : {
         "tags" : [ "Application Records" ],
@@ -510,12 +584,12 @@
           }
         } ],
         "responses" : {
-          "404" : {
-            "description" : "Bearer subject and requested owner do not match",
+          "403" : {
+            "description" : "Authenticated identity lacks reader permission",
             "content" : {
               "application/json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ErrorResponse"
+                  "$ref" : "#/components/schemas/SecurityErrorResponse"
                 }
               }
             }
@@ -533,8 +607,8 @@
               }
             }
           },
-          "403" : {
-            "description" : "Authenticated identity lacks reader permission",
+          "401" : {
+            "description" : "Missing, invalid or ambiguous authentication",
             "content" : {
               "application/json" : {
                 "schema" : {
@@ -543,12 +617,12 @@
               }
             }
           },
-          "401" : {
-            "description" : "Missing, invalid or ambiguous authentication",
+          "404" : {
+            "description" : "Bearer subject and requested owner do not match",
             "content" : {
               "application/json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/SecurityErrorResponse"
+                  "$ref" : "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1044,6 +1118,19 @@
             "description" : "Optional record version last observed by the caller; stale values return HTTP 409",
             "format" : "int64",
             "example" : 3
+          },
+          "occurredAt" : {
+            "type" : "string",
+            "description" : "UTC time when the lifecycle milestone actually occurred; defaults to receipt time",
+            "format" : "date-time",
+            "example" : "2026-07-26T10:15:30Z"
+          },
+          "reason" : {
+            "maxLength" : 500,
+            "minLength" : 0,
+            "type" : "string",
+            "description" : "Optional concise reason or outcome evidence for the transition",
+            "example" : "First-stage interview confirmed"
           }
         },
         "description" : "Request to update the status of an application"
@@ -1083,6 +1170,101 @@
             "format" : "uuid"
           }
         }
+      },
+      "ApplicationEventResponse" : {
+        "type" : "object",
+        "properties" : {
+          "id" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "applicationId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "eventType" : {
+            "type" : "string",
+            "enum" : [ "LEGACY_SNAPSHOT", "APPLICATION_CREATED", "STATUS_CHANGED", "DOCUMENT_REFERENCE_CHANGED", "GENERATED_APPLICATION_WITHDRAWN", "APPLICATION_DELETED" ]
+          },
+          "fromStatus" : {
+            "type" : "string",
+            "enum" : [ "DOCUMENTS_GENERATED", "APPLIED", "INTERVIEW", "UNSUCCESSFUL", "OFFER", "ACCEPTED", "REJECTED_BY_USER", "WITHDRAWN" ]
+          },
+          "toStatus" : {
+            "type" : "string",
+            "enum" : [ "DOCUMENTS_GENERATED", "APPLIED", "INTERVIEW", "UNSUCCESSFUL", "OFFER", "ACCEPTED", "REJECTED_BY_USER", "WITHDRAWN" ]
+          },
+          "actorType" : {
+            "type" : "string",
+            "enum" : [ "USER", "SERVICE", "SYSTEM" ]
+          },
+          "actorId" : {
+            "type" : "string"
+          },
+          "source" : {
+            "type" : "string",
+            "enum" : [ "USER", "SERVICE", "SYSTEM_DATA", "MIGRATION" ]
+          },
+          "occurredAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "recordedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "reason" : {
+            "type" : "string"
+          },
+          "recordVersion" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        },
+        "description" : "Immutable application activity event"
+      },
+      "ApplicationHistoryResponse" : {
+        "type" : "object",
+        "properties" : {
+          "applicationId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "currentStatus" : {
+            "type" : "string",
+            "enum" : [ "DOCUMENTS_GENERATED", "APPLIED", "INTERVIEW", "UNSUCCESSFUL", "OFFER", "ACCEPTED", "REJECTED_BY_USER", "WITHDRAWN" ]
+          },
+          "currentVersion" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "reconciled" : {
+            "type" : "boolean"
+          },
+          "events" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/ApplicationEventResponse"
+            }
+          },
+          "page" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "size" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "totalElements" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "totalPages" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        },
+        "description" : "Owner-scoped ordered page of immutable application events"
       },
       "SecurityErrorResponse" : {
         "required" : [ "code", "message" ],

@@ -1,14 +1,17 @@
 package com.jobseekercopilot.applicationtracker.controller;
 
 import com.jobseekercopilot.applicationtracker.dto.ApplicationRecordResponse;
+import com.jobseekercopilot.applicationtracker.dto.ApplicationHistoryResponse;
 import com.jobseekercopilot.applicationtracker.dto.CreateApplicationRequest;
 import com.jobseekercopilot.applicationtracker.dto.UpdateStatusRequest;
 import com.jobseekercopilot.applicationtracker.dto.UpdateDocumentReferenceRequest;
 import com.jobseekercopilot.applicationtracker.dto.WithdrawGeneratedApplicationResponse;
 import com.jobseekercopilot.applicationtracker.exception.ErrorResponse;
 import com.jobseekercopilot.applicationtracker.exception.SecurityErrorResponse;
+import com.jobseekercopilot.applicationtracker.security.ApplicationActorResolver;
 import com.jobseekercopilot.applicationtracker.security.ApplicationOwnerResolver;
 import com.jobseekercopilot.applicationtracker.service.ApplicationCreationResult;
+import com.jobseekercopilot.applicationtracker.service.ApplicationHistoryService;
 import com.jobseekercopilot.applicationtracker.service.ApplicationRecordService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -20,6 +23,8 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -34,7 +39,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.validation.annotation.Validated;
 
 import java.util.List;
 import java.util.UUID;
@@ -42,13 +49,16 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/applications")
 @RequiredArgsConstructor
+@Validated
 @Tag(name = "Application Records", description = "Endpoints for tracking job applications")
 public class ApplicationRecordController {
 
     public static final String IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
 
     private final ApplicationRecordService service;
+    private final ApplicationHistoryService historyService;
     private final ApplicationOwnerResolver ownerResolver;
+    private final ApplicationActorResolver actorResolver;
 
     @PostMapping
     @Operation(
@@ -81,7 +91,11 @@ public class ApplicationRecordController {
             @Parameter(hidden = true) Authentication authentication) {
         String ownerId = ownerResolver.resolve(authentication, request.getUserId());
         ApplicationCreationResult result =
-                service.createApplication(ownerId, idempotencyKey, request);
+                service.createApplication(
+                        ownerId,
+                        idempotencyKey,
+                        request,
+                        actorResolver.resolve(authentication));
         return ResponseEntity
                 .status(result.created() ? HttpStatus.CREATED : HttpStatus.OK)
                 .body(result.application());
@@ -104,6 +118,43 @@ public class ApplicationRecordController {
         String ownerId = ownerResolver.resolve(authentication, requestedOwner);
         ApplicationRecordResponse response = service.getApplicationById(ownerId, id);
         return ResponseEntity.ok(response);
+    }
+
+    @GetMapping(
+            value = "/{id}/history",
+            produces = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(
+            summary = "Get immutable application activity history",
+            description = "Returns an owner-scoped chronological page and whether its latest event reconciles with current application state.")
+    @SecurityRequirement(name = "bearerAuth")
+    @SecurityRequirement(name = "serviceToken")
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Ordered activity page returned",
+                    content = @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(
+                                    implementation = ApplicationHistoryResponse.class))),
+            @ApiResponse(
+                    responseCode = "404",
+                    description = "Application record not found",
+                    content = @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<ApplicationHistoryResponse> getApplicationHistory(
+            @Parameter(description = "UUID of the application record")
+            @PathVariable UUID id,
+            @Parameter(description = "Required owner context for approved service identities")
+            @RequestHeader(value = ApplicationOwnerResolver.OWNER_HEADER, required = false)
+            String requestedOwner,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "50") @Min(1) @Max(100) int size,
+            @Parameter(hidden = true) Authentication authentication) {
+        String ownerId = ownerResolver.resolve(authentication, requestedOwner);
+        return ResponseEntity.ok(
+                historyService.getHistory(ownerId, id, page, size));
     }
 
     @GetMapping(value = "/user/{userId}", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -202,7 +253,11 @@ public class ApplicationRecordController {
             @Valid @RequestBody UpdateStatusRequest request,
             @Parameter(hidden = true) Authentication authentication) {
         String ownerId = ownerResolver.resolve(authentication, null);
-        ApplicationRecordResponse response = service.updateStatus(ownerId, id, request);
+        ApplicationRecordResponse response = service.updateStatus(
+                ownerId,
+                id,
+                request,
+                actorResolver.resolve(authentication));
         return ResponseEntity.ok(response);
     }
 
@@ -224,7 +279,11 @@ public class ApplicationRecordController {
             String requestedOwner,
             @Parameter(hidden = true) Authentication authentication) {
         String ownerId = ownerResolver.resolve(authentication, requestedOwner);
-        return ResponseEntity.ok(service.updateDocumentReference(ownerId, id, request));
+        return ResponseEntity.ok(service.updateDocumentReference(
+                ownerId,
+                id,
+                request,
+                actorResolver.resolve(authentication)));
     }
 
     @PostMapping("/{id}/withdraw-generated")
@@ -243,7 +302,11 @@ public class ApplicationRecordController {
             @Parameter(hidden = true) Authentication authentication) {
         String ownerId = ownerResolver.resolve(authentication, null);
         return ResponseEntity.ok(
-                service.withdrawGeneratedApplication(ownerId, id, authorization));
+                service.withdrawGeneratedApplication(
+                        ownerId,
+                        id,
+                        authorization,
+                        actorResolver.resolve(authentication)));
     }
 
     @DeleteMapping("/{id}")
@@ -257,7 +320,8 @@ public class ApplicationRecordController {
             @Parameter(description = "UUID of the application record to delete") @PathVariable UUID id,
             @Parameter(hidden = true) Authentication authentication) {
         String ownerId = ownerResolver.resolve(authentication, null);
-        service.deleteApplication(ownerId, id);
+        service.deleteApplication(
+                ownerId, id, actorResolver.resolve(authentication));
         return ResponseEntity.noContent().build();
     }
 }

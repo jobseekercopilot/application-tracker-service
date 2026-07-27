@@ -43,6 +43,9 @@ class ApplicationRecordServiceTest {
     @Mock
     private ApplicationCreationService applicationCreationService;
 
+    @Mock
+    private ApplicationEventRecorder eventRecorder;
+
     private ApplicationRecordService service;
 
     private static final UUID CV_ID =
@@ -55,7 +58,8 @@ class ApplicationRecordServiceTest {
         service = new ApplicationRecordService(
                 repository,
                 documentReferenceVerifier,
-                applicationCreationService);
+                applicationCreationService,
+                eventRecorder);
     }
 
     @Test
@@ -89,7 +93,10 @@ class ApplicationRecordServiceTest {
         savedRecord.setCoverLetterDocumentVersion(1);
         savedRecord.setCoverLetterDocumentContentSha256("b".repeat(64));
         when(applicationCreationService.createApplication(
-                        "user-123", null, request))
+                        "user-123",
+                        null,
+                        request,
+                        ApplicationCommandActor.user("user-123")))
                 .thenReturn(new ApplicationCreationOutcome(savedRecord, true));
 
         ApplicationRecordResponse response = service.createApplication("user-123", request);
@@ -106,7 +113,11 @@ class ApplicationRecordServiceTest {
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.DOCUMENTS_GENERATED);
 
         verify(applicationCreationService)
-                .createApplication("user-123", null, request);
+                .createApplication(
+                        "user-123",
+                        null,
+                        request,
+                        ApplicationCommandActor.user("user-123"));
     }
 
     @Test
@@ -302,7 +313,7 @@ class ApplicationRecordServiceTest {
                         .version(2)
                         .contentSha256("c".repeat(64))
                         .build());
-        when(repository.save(any(ApplicationRecord.class)))
+        when(repository.saveAndFlush(any(ApplicationRecord.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         ApplicationRecordResponse response = service.updateDocumentReference(

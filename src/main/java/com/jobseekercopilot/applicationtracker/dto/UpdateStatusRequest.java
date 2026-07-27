@@ -3,6 +3,8 @@ package com.jobseekercopilot.applicationtracker.dto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.PositiveOrZero;
+import jakarta.validation.constraints.Size;
+import java.time.Instant;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -40,4 +42,15 @@ public class UpdateStatusRequest {
             minimum = "0"
     )
     private Long expectedVersion;
+
+    @Schema(
+            description = "UTC time when the lifecycle milestone actually occurred; defaults to receipt time",
+            example = "2026-07-26T10:15:30Z")
+    private Instant occurredAt;
+
+    @Size(max = 500, message = "reason must be at most 500 characters")
+    @Schema(
+            description = "Optional concise reason or outcome evidence for the transition",
+            example = "First-stage interview confirmed")
+    private String reason;
 }

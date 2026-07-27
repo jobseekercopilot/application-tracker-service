@@ -35,6 +35,9 @@ class ApplicationRecordLifecycleServiceTest {
     @Mock
     private ApplicationCreationService applicationCreationService;
 
+    @Mock
+    private ApplicationEventRecorder eventRecorder;
+
     private ApplicationRecordService service;
 
     @BeforeEach
@@ -42,7 +45,8 @@ class ApplicationRecordLifecycleServiceTest {
         service = new ApplicationRecordService(
                 repository,
                 documentReferenceVerifier,
-                applicationCreationService);
+                applicationCreationService,
+                eventRecorder);
     }
 
     @Test

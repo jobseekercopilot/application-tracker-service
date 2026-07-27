@@ -12,6 +12,7 @@ import com.jobseekercopilot.applicationtracker.entity.ApplicationStatus;
 import com.jobseekercopilot.applicationtracker.exception.DocumentReferenceUnavailableException;
 import com.jobseekercopilot.applicationtracker.exception.InvalidDocumentReferenceException;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationRecordRepository;
+import com.jobseekercopilot.applicationtracker.repository.ApplicationEventRepository;
 import com.jobseekercopilot.applicationtracker.service.DocumentReferenceVerifier;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,7 +27,9 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -71,6 +74,9 @@ class ApplicationRecordControllerIntegrationTest {
 
     @Autowired
     private ApplicationRecordRepository repository;
+
+    @Autowired
+    private ApplicationEventRepository eventRepository;
 
     @MockBean
     private DocumentReferenceVerifier documentReferenceVerifier;
@@ -146,6 +152,94 @@ class ApplicationRecordControllerIntegrationTest {
     }
 
     @Test
+    void lifecycleCommandsExposeOrderedPaginatedOwnerScopedHistory()
+            throws Exception {
+        String ownerId = "history-owner";
+        String body = mockMvc.perform(post("/api/v1/applications")
+                        .header(HttpHeaders.AUTHORIZATION, authorization(ownerId))
+                        .header(
+                                ApplicationRecordController.IDEMPOTENCY_KEY_HEADER,
+                                "history-job-attempt")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                requestForOwner(ownerId))))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        UUID applicationId =
+                UUID.fromString(objectMapper.readTree(body).get("id").asText());
+        Instant appliedAt =
+                Instant.now().truncatedTo(ChronoUnit.MICROS).plusSeconds(10);
+        Instant interviewAt = appliedAt.plusSeconds(10);
+        Instant offerAt = interviewAt.plusSeconds(10);
+
+        transition(applicationId, ownerId, "APPLIED", 0, appliedAt, "Applied");
+        transition(
+                applicationId,
+                ownerId,
+                "INTERVIEW",
+                1,
+                interviewAt,
+                "First-stage interview");
+        mockMvc.perform(patch(
+                                "/api/v1/applications/{id}/status",
+                                applicationId)
+                        .header(HttpHeaders.AUTHORIZATION, authorization(ownerId))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                UpdateStatusRequest.builder()
+                                        .status("OFFER")
+                                        .expectedVersion(2L)
+                                        .occurredAt(appliedAt.plusSeconds(5))
+                                        .reason("Inconsistent earlier offer")
+                                        .build())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(
+                        "occurredAt cannot be before the latest recorded application event."));
+        transition(applicationId, ownerId, "OFFER", 2, offerAt, "Offer received");
+
+        mockMvc.perform(get(
+                                "/api/v1/applications/{id}/history",
+                                applicationId)
+                        .header(HttpHeaders.AUTHORIZATION, authorization(ownerId))
+                        .queryParam("page", "0")
+                        .queryParam("size", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.applicationId")
+                        .value(applicationId.toString()))
+                .andExpect(jsonPath("$.currentStatus").value("OFFER"))
+                .andExpect(jsonPath("$.currentVersion").value(3))
+                .andExpect(jsonPath("$.reconciled").value(true))
+                .andExpect(jsonPath("$.page").value(0))
+                .andExpect(jsonPath("$.size").value(2))
+                .andExpect(jsonPath("$.totalElements").value(4))
+                .andExpect(jsonPath("$.totalPages").value(2))
+                .andExpect(jsonPath("$.events", hasSize(2)))
+                .andExpect(jsonPath("$.events[0].eventType")
+                        .value("APPLICATION_CREATED"))
+                .andExpect(jsonPath("$.events[0].actorType").value("USER"))
+                .andExpect(jsonPath("$.events[0].actorId").value(ownerId))
+                .andExpect(jsonPath("$.events[0].source").value("USER"))
+                .andExpect(jsonPath("$.events[1].eventType")
+                        .value("STATUS_CHANGED"))
+                .andExpect(jsonPath("$.events[1].fromStatus")
+                        .value("DOCUMENTS_GENERATED"))
+                .andExpect(jsonPath("$.events[1].toStatus").value("APPLIED"))
+                .andExpect(jsonPath("$.events[1].occurredAt")
+                        .value(appliedAt.toString()))
+                .andExpect(jsonPath("$.events[1].reason").value("Applied"));
+
+        mockMvc.perform(get(
+                                "/api/v1/applications/{id}/history",
+                                applicationId)
+                        .header(
+                                HttpHeaders.AUTHORIZATION,
+                                authorization("different-owner")))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void repeatedIdempotencyKeyAndPayload_ShouldReturnSameRecord() throws Exception {
         String firstBody = mockMvc.perform(post("/api/v1/applications")
                         .header(HttpHeaders.AUTHORIZATION, authorization("user-123"))
@@ -171,6 +265,9 @@ class ApplicationRecordControllerIntegrationTest {
                 .andExpect(jsonPath("$.id").value(firstId));
 
         assertThat(repository.count()).isEqualTo(1);
+        assertThat(eventRepository.countByApplicationIdAndUserId(
+                        UUID.fromString(firstId), "user-123"))
+                .isEqualTo(1);
     }
 
     @Test
@@ -716,5 +813,30 @@ class ApplicationRecordControllerIntegrationTest {
                 .cvDocumentId(CV_ID)
                 .coverLetterDocumentId(COVER_LETTER_ID)
                 .build();
+    }
+
+    private void transition(
+            UUID applicationId,
+            String ownerId,
+            String statusValue,
+            long expectedVersion,
+            Instant occurredAt,
+            String reason) throws Exception {
+        mockMvc.perform(patch(
+                                "/api/v1/applications/{id}/status",
+                                applicationId)
+                        .header(
+                                HttpHeaders.AUTHORIZATION,
+                                authorization(ownerId))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                UpdateStatusRequest.builder()
+                                        .status(statusValue)
+                                        .expectedVersion(expectedVersion)
+                                        .occurredAt(occurredAt)
+                                        .reason(reason)
+                                        .build())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value(statusValue));
     }
 }

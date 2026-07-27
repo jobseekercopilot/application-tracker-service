@@ -24,7 +24,7 @@ class ApplicationContractPolicyTest {
         JsonNode operation =
                 contract.at("/paths/~1api~1v1~1applications~1user~1{userId}/get");
 
-        assertEquals("3.0.0", contract.at("/info/version").asText());
+        assertEquals("3.1.0", contract.at("/info/version").asText());
         assertEquals("getApplicationsForUser", operation.path("operationId").asText());
         assertEquals(
                         Set.of("bearerAuth", "serviceToken"),
@@ -135,6 +135,44 @@ class ApplicationContractPolicyTest {
                 .at("/components/schemas/UpdateStatusRequest/properties/expectedVersion/description")
                 .asText()
                 .contains("409"));
+        assertTrue(contract
+                .at("/components/schemas/UpdateStatusRequest/properties/occurredAt")
+                .has("description"));
+        assertEquals(
+                500,
+                contract.at("/components/schemas/UpdateStatusRequest/properties/reason/maxLength")
+                        .asInt());
+    }
+
+    @Test
+    void historyContractIsOwnerScopedOrderedAndPaginated() throws Exception {
+        JsonNode contract = objectMapper.readTree(CONTRACT.toFile());
+        JsonNode operation =
+                contract.at("/paths/~1api~1v1~1applications~1{id}~1history/get");
+
+        assertEquals(
+                "#/components/schemas/ApplicationHistoryResponse",
+                operation.at("/responses/200/content/application~1json/schema/$ref")
+                        .asText());
+        assertTrue(operation.path("responses").has("404"));
+        Set<String> parameters = StreamSupport.stream(
+                        operation.path("parameters").spliterator(), false)
+                .map(parameter -> parameter.path("name").asText())
+                .collect(Collectors.toSet());
+        assertTrue(parameters.containsAll(Set.of(
+                "id", "X-Application-Owner", "page", "size")));
+        assertEquals(
+                100,
+                operation.at("/parameters/3/schema/maximum").asInt());
+
+        JsonNode eventProperties =
+                contract.at("/components/schemas/ApplicationEventResponse/properties");
+        assertTrue(eventProperties.has("occurredAt"));
+        assertTrue(eventProperties.has("recordedAt"));
+        assertTrue(eventProperties.has("actorType"));
+        assertTrue(eventProperties.has("actorId"));
+        assertTrue(eventProperties.has("source"));
+        assertTrue(eventProperties.has("recordVersion"));
     }
 
     @Test

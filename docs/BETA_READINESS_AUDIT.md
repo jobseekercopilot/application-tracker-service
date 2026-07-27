@@ -52,6 +52,11 @@ enablement or represent a durable, access-controlled source of truth.
   idempotency; and one database-enforced application per owner/canonical job.
   Real PostgreSQL tests prove concurrent identical commands converge on one
   record. Producer and client rollout remain on their coordinated issues.
+- APP-07 stores creation and lifecycle activity as immutable actor/source
+  attributed events with separate UTC occurrence and recording times. The
+  owner-scoped history API is ordered and paginated, and PostgreSQL migration,
+  trigger, retry, reconciliation, backup and restore tests protect the event
+  chronology. Reporting and client adoption remain separate delivery work.
 
 ## Critical findings
 
@@ -85,14 +90,14 @@ injection, automated encrypted recovery points and a deployed restore drill
 before this service can be enabled for beta. APP-06 provides repository
 row-versioning; deployment and consumer rollout remain dependencies.
 
-### Lifecycle guarded; immutable history still absent
+### Lifecycle and immutable history implemented; consumers still pending
 
 APP-06 rejects skipped, backward and post-terminal transitions, treats
 same-status retries as no-op successes, and prevents stale or concurrent writes
-from silently winning. Only the current status is still stored. Interview,
-offer, unsuccessful and withdrawal times are synthesized by clients from the
-record's latest update time, so prior events disappear or are misdated. APP-07
-must add immutable transition history before the full activity timeline is
+from silently winning. APP-07 now appends every accepted mutation to
+database-enforced immutable history and publishes actual interview, offer and
+outcome milestone times through an ordered, owner-scoped API. Reporting and the
+client must adopt the new contract before the full user-facing timeline is
 beta-ready.
 
 ### Tracker creation is decoupled; producer and client rollout incomplete
@@ -120,7 +125,8 @@ an archive, retention or dependent-document policy. APP-11 removes raw entity
 fixture writes and owner-wide reset/verification, rejects default/unknown/mixed
 profiles and retains the independent APP-03 identity. The producer is intentionally
 incompatible with the old System Data caller; that consumer and the E2E
-Infrastructure profile must adopt `3.0.0` before this blocker can close.
+Infrastructure profile must adopt the current `3.1.0` contract before this
+blocker can close.
 
 ### Query, privacy and operational limits
 
@@ -151,8 +157,8 @@ failure, allowing false-positive tracking journeys.
 |---|---|
 | Create tracked application | Tracker contract complete; producer/client rollout pending |
 | User/application/document lookup | Owner-scoped in the service; consumer rollout pending |
-| Status lifecycle | Repository enforcement complete; client adoption and immutable APP-07 history pending |
-| Activity history/timeline | Absent; clients synthesize lossy events |
+| Status lifecycle | Repository enforcement and event history complete; client adoption pending |
+| Activity history/timeline | Producer complete; reporting/client adoption pending |
 | Document replacement | Incomplete; cross-service consistency gap |
 | Withdrawal/deletion | Unsafe; best-effort cleanup and permanent removal |
 | Manual/external application capture | Tracker contract complete; client experience pending |

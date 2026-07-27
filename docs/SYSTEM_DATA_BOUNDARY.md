@@ -17,7 +17,8 @@ environment.
 
 ## Contract
 
-The producer OpenAPI version is `3.0.0`. The breaking major version removes the
+The producer OpenAPI version is `3.1.0`. Version `3.0.0` introduced the breaking
+major change that removes the
 legacy raw-entity and owner-wide operations:
 
 - `POST /internal/system-data/seed/applications`
@@ -101,7 +102,7 @@ partially replaced scenario.
 
 ## Operational use
 
-System Data must adopt this `3.0.0` producer contract before the integrated E2E
+System Data must adopt this `3.1.0` producer contract before the integrated E2E
 journey can use APP-11. Infrastructure must activate the explicit `e2e` profile
 only in the isolated E2E Compose overlay. Base/developer Compose must leave this
 boundary disabled.
@@ -112,5 +113,5 @@ ordinary user-created rows remain outside every fixture scenario. APP-11 does
 not make fixture data a production capability.
 
 Rollback restores the previous producer and its matching System Data consumer
-together. Do not route a `3.0.0` request to an older producer or re-enable the
+together. Do not route a `3.x` request to an older producer or re-enable the
 removed unsafe endpoints for compatibility.

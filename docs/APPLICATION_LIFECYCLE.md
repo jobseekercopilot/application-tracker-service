@@ -17,7 +17,7 @@ Application Tracker accepts only these forward status changes:
 
 All other changes return HTTP `409` without changing the record. There is no
 public or administrative reopen path. A future reopen capability requires
-explicit authorization and an immutable reasoned event under APP-07; it must
+explicit authorization and a new immutable reasoned event; it must
 not bypass this matrix.
 
 Generated-only withdrawal remains the dedicated
@@ -41,7 +41,9 @@ patching status:
 ```json
 {
   "status": "INTERVIEW",
-  "expectedVersion": 3
+  "expectedVersion": 3,
+  "occurredAt": "2026-07-26T18:00:00Z",
+  "reason": "First-stage interview confirmed"
 }
 ```
 
@@ -71,19 +73,19 @@ current and requested statuses. It never mutates the stored row.
 - `appliedAt` is assigned on the first successful transition to `APPLIED` and
   is never overwritten by later transitions.
 - invalid, stale, concurrent-losing and same-status commands do not change
-  lifecycle timestamps.
+  lifecycle timestamps or append events.
 
-Only the first applied time has a dedicated field today. APP-07 owns immutable
-history and accurate timestamps for interview, offer and terminal events;
-clients must not present `updatedAt` as if it were a complete history.
+Every accepted transition appends its actual `occurredAt` and separate
+`recordedAt` to immutable history. Interview, offer and terminal milestone
+dates therefore come from events, not from `updatedAt`. See
+`APPLICATION_ACTIVITY_HISTORY.md`.
 
 ## Deployment and recovery
 
-V5 adds `record_version BIGINT NOT NULL DEFAULT 0` and a non-negative database
-constraint. It is an additive, forward-only migration and inherited records
-start at version zero. Deploy the producer before consumers begin sending
-`expectedVersion`; older consumers remain protected by database optimistic
-locking.
+V5 adds optimistic record versions. V7 adds the append-only event table,
+truthful legacy snapshots and the database mutation-rejection trigger. Both
+are additive, forward-only migrations. Deploy the producer before consumers
+begin sending `expectedVersion`, `occurredAt` or history queries.
 
 Rollback restores the previous compatible producer and database recovery point
 according to `DATABASE_OPERATIONS.md`. Do not remove or reuse the V5 column in

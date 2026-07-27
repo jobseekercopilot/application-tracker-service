@@ -62,7 +62,9 @@ class ApplicationCreationServiceTest {
                         "job-1",
                         DocumentType.COVER_LETTER))
                 .thenReturn(reference(COVER_LETTER_ID, DocumentType.COVER_LETTER));
-        when(transaction.create(any(ApplicationRecord.class)))
+        when(transaction.create(
+                        any(ApplicationRecord.class),
+                        any(ApplicationCommandActor.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         ApplicationCreationOutcome outcome =
@@ -70,7 +72,8 @@ class ApplicationCreationServiceTest {
 
         ArgumentCaptor<ApplicationRecord> candidate =
                 ArgumentCaptor.forClass(ApplicationRecord.class);
-        verify(transaction).create(candidate.capture());
+        verify(transaction).create(
+                candidate.capture(), any(ApplicationCommandActor.class));
         assertThat(outcome.created()).isTrue();
         assertThat(candidate.getValue().getIdempotencyKey())
                 .startsWith("legacy-")
@@ -103,7 +106,9 @@ class ApplicationCreationServiceTest {
         when(transaction.findReplayOrRejectDuplicate(
                         anyString(), anyString(), anyString(), anyString()))
                 .thenReturn(Optional.empty());
-        when(transaction.create(any(ApplicationRecord.class)))
+        when(transaction.create(
+                        any(ApplicationRecord.class),
+                        any(ApplicationCommandActor.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         ApplicationCreationOutcome outcome =
@@ -141,7 +146,9 @@ class ApplicationCreationServiceTest {
         when(documentReferenceVerifier.verify(
                         "owner-1", CV_ID, "external-job-1", DocumentType.CV))
                 .thenReturn(reference(CV_ID, DocumentType.CV, "external-job-1"));
-        when(transaction.create(any(ApplicationRecord.class)))
+        when(transaction.create(
+                        any(ApplicationRecord.class),
+                        any(ApplicationCommandActor.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         ApplicationCreationOutcome outcome =
@@ -167,7 +174,9 @@ class ApplicationCreationServiceTest {
                         invocation.getArgument(1),
                         invocation.getArgument(3),
                         invocation.getArgument(2)));
-        when(transaction.create(any(ApplicationRecord.class)))
+        when(transaction.create(
+                        any(ApplicationRecord.class),
+                        any(ApplicationCommandActor.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         ApplicationCreationOutcome outcome =
@@ -209,7 +218,9 @@ class ApplicationCreationServiceTest {
         assertThat(outcome.record()).isSameAs(existing);
         verify(documentReferenceVerifier, never()).verify(
                 anyString(), any(UUID.class), anyString(), any(DocumentType.class));
-        verify(transaction, never()).create(any());
+        verify(transaction, never()).create(
+                any(ApplicationRecord.class),
+                any(ApplicationCommandActor.class));
     }
 
     @Test
@@ -228,7 +239,9 @@ class ApplicationCreationServiceTest {
                         invocation.getArgument(1),
                         invocation.getArgument(3),
                         invocation.getArgument(2)));
-        when(transaction.create(any(ApplicationRecord.class)))
+        when(transaction.create(
+                        any(ApplicationRecord.class),
+                        any(ApplicationCommandActor.class)))
                 .thenThrow(new DataIntegrityViolationException("synthetic race"));
         when(transaction.resolveConstraintRace(
                         anyString(), anyString(), anyString(), anyString()))

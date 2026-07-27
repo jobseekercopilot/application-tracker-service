@@ -93,6 +93,12 @@ indexes for owner/idempotency and non-fixture owner/canonical-job identity.
 Inherited rows are marked `GENERATED`; their unknown command key/fingerprint
 remain `NULL`. V6 fails rather than silently choosing among pre-existing
 owner/canonical-job duplicates.
+V7 adds `application_events`, one event per resulting application record
+version, chronological owner/application indexes and a PostgreSQL trigger that
+rejects event updates and deletes. Existing rows receive one explicit
+`LEGACY_SNAPSHOT` of their known current status/version; the migration does not
+invent prior transitions. Event rows do not cascade with current-row deletion;
+APP-09 remains responsible for approved retention and privacy handling.
 
 ## Recovery objectives
 
@@ -113,23 +119,26 @@ or restore-drill age breaches these targets.
 
 - creates the inherited V1 schema and record;
 - rejects an invalid status and invalid credentials;
-- upgrades through V2/V3/V4/V5 and the guarded V6 creation migration;
+- upgrades through V2/V3/V4/V5, guarded V6 creation and append-only V7 history;
 - proves inherited rows receive no invented immutable document reference;
 - proves inherited rows receive version zero;
 - proves inherited rows receive `GENERATED` provenance without invented
   idempotency facts;
 - proves ordinary data is not classified as fixture data;
+- proves inherited records receive one truthful legacy snapshot;
 - repeats the startup migration path against the same database;
 - creates a PostgreSQL custom-format backup and restores it to a fresh database;
 - validates Flyway history and exact representative fields after restore;
-- proves the pre-upgrade reader remains compatible; and
-- deletes the restored synthetic record and proves absence.
+- proves the pre-upgrade reader remains compatible;
+- proves event update/delete is rejected before and after restore; and
+- deletes the restored current record while preserving its event evidence.
 
 `PostgresJpaSchemaIntegrationTest` proves Flyway's final PostgreSQL schema
 matches the JPA entity, preserves service-assigned UUIDs, stores an approved
 manual application without documents, makes simultaneous identical create
-commands return one application identity, and rejects the second of two writers
-that loaded the same record version.
+commands return one application identity and one creation event, reconciles
+current state with the latest event, rejects event rewrites/deletion, and
+rejects the second of two writers that loaded the same record version.
 
 This local drill does not constitute AWS backup, encryption or disaster-recovery
 evidence. Before beta enablement, an operator must restore an approved

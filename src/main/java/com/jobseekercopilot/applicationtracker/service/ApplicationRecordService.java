@@ -13,6 +13,7 @@ import com.jobseekercopilot.applicationtracker.entity.ApplicationStatus;
 import com.jobseekercopilot.applicationtracker.exception.ApplicationVersionConflictException;
 import com.jobseekercopilot.applicationtracker.exception.InvalidStatusException;
 import com.jobseekercopilot.applicationtracker.exception.InvalidDocumentReferenceException;
+import com.jobseekercopilot.applicationtracker.exception.InvalidRequestException;
 import com.jobseekercopilot.applicationtracker.exception.ResourceNotFoundException;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationRecordRepository;
 import lombok.RequiredArgsConstructor;
@@ -21,7 +22,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
@@ -49,6 +52,7 @@ public class ApplicationRecordService {
     private final ApplicationRecordRepository repository;
     private final DocumentReferenceVerifier documentReferenceVerifier;
     private final ApplicationCreationService applicationCreationService;
+    private final ApplicationEventRecorder eventRecorder;
 
     public ApplicationRecordResponse createApplication(
             String ownerId,
@@ -60,10 +64,22 @@ public class ApplicationRecordService {
             String ownerId,
             String idempotencyKey,
             CreateApplicationRequest request) {
+        return createApplication(
+                ownerId,
+                idempotencyKey,
+                request,
+                ApplicationCommandActor.user(ownerId));
+    }
+
+    public ApplicationCreationResult createApplication(
+            String ownerId,
+            String idempotencyKey,
+            CreateApplicationRequest request,
+            ApplicationCommandActor actor) {
         long startedAt = System.nanoTime();
         ApplicationCreationOutcome outcome =
                 applicationCreationService.createApplication(
-                        ownerId, idempotencyKey, request);
+                        ownerId, idempotencyKey, request, actor);
         ApplicationRecord saved = outcome.record();
         log.info("Application create resolved provider={} provenance={} created={} cvDocumentLinked={} coverLetterDocumentLinked={} durationMs={}",
                 saved.getProvider(),
@@ -108,6 +124,19 @@ public class ApplicationRecordService {
             String ownerId,
             UUID id,
             UpdateStatusRequest request) {
+        return updateStatus(
+                ownerId,
+                id,
+                request,
+                ApplicationCommandActor.user(ownerId));
+    }
+
+    @Transactional
+    public ApplicationRecordResponse updateStatus(
+            String ownerId,
+            UUID id,
+            UpdateStatusRequest request,
+            ApplicationCommandActor actor) {
         long startedAt = System.nanoTime();
         ApplicationRecord record = findOwnedApplication(ownerId, id);
 
@@ -121,16 +150,24 @@ public class ApplicationRecordService {
                 && request.getExpectedVersion() != record.getVersion()) {
             throw new ApplicationVersionConflictException();
         }
+        Instant occurredAt = resolveOccurredAt(record, request.getOccurredAt());
         if (newStatus != ApplicationStatus.DOCUMENTS_GENERATED
                 && record.getApplicationUsedCvDocumentId() == null) {
-            freezeApplicationUsedReferences(record);
+            freezeApplicationUsedReferences(
+                    record, LocalDateTime.ofInstant(occurredAt, ZoneOffset.UTC));
         }
         record.setStatus(newStatus);
         if (newStatus == ApplicationStatus.APPLIED && record.getAppliedAt() == null) {
-            record.setAppliedAt(LocalDateTime.now());
+            record.setAppliedAt(LocalDateTime.ofInstant(occurredAt, ZoneOffset.UTC));
         }
 
         ApplicationRecord updated = repository.saveAndFlush(record);
+        eventRecorder.recordStatusChanged(
+                updated,
+                previousStatus,
+                occurredAt,
+                actor,
+                request.getReason());
         log.info("Owner-scoped application status updated previousStatus={} newStatus={} durationMs={}",
                 previousStatus,
                 newStatus,
@@ -143,6 +180,19 @@ public class ApplicationRecordService {
             String ownerId,
             UUID id,
             UpdateDocumentReferenceRequest request) {
+        return updateDocumentReference(
+                ownerId,
+                id,
+                request,
+                ApplicationCommandActor.user(ownerId));
+    }
+
+    @Transactional
+    public ApplicationRecordResponse updateDocumentReference(
+            String ownerId,
+            UUID id,
+            UpdateDocumentReferenceRequest request,
+            ApplicationCommandActor actor) {
         ApplicationRecord record = findOwnedApplicationForUpdate(ownerId, id);
         if (record.getStatus() != ApplicationStatus.DOCUMENTS_GENERATED
                 || record.getApplicationUsedCvDocumentId() != null) {
@@ -155,6 +205,9 @@ public class ApplicationRecordService {
                     request.getDocumentId(),
                     record.getJobId(),
                     DocumentType.CV);
+            if (reference.equals(currentCvReference(record))) {
+                return mapToResponse(record);
+            }
             setCurrentCvReference(record, reference);
         } else if ("COVER_LETTER".equals(documentType)) {
             DocumentVersionReference reference = documentReferenceVerifier.verify(
@@ -162,11 +215,19 @@ public class ApplicationRecordService {
                     request.getDocumentId(),
                     record.getJobId(),
                     DocumentType.COVER_LETTER);
+            if (reference.equals(currentCoverLetterReference(record))) {
+                return mapToResponse(record);
+            }
             setCurrentCoverLetterReference(record, reference);
         } else {
             throw new InvalidStatusException("Invalid documentType: " + request.getDocumentType());
         }
-        ApplicationRecord updated = repository.save(record);
+        ApplicationRecord updated = repository.saveAndFlush(record);
+        eventRecorder.recordDocumentReferenceChanged(
+                updated,
+                Instant.now(),
+                actor,
+                documentType + " current approved reference replaced.");
         log.info("Owner-scoped application document reference updated documentType={}",
                 documentType);
         return mapToResponse(updated);
@@ -174,11 +235,18 @@ public class ApplicationRecordService {
 
     @Transactional
     public void deleteApplication(String ownerId, UUID id) {
+        deleteApplication(ownerId, id, ApplicationCommandActor.user(ownerId));
+    }
+
+    @Transactional
+    public void deleteApplication(
+            String ownerId, UUID id, ApplicationCommandActor actor) {
         ApplicationRecord record = findOwnedApplicationForUpdate(ownerId, id);
         if (record.getApplicationUsedCvDocumentId() != null) {
             throw new InvalidStatusException(
                     "Submitted applications require retention-aware deletion.");
         }
+        eventRecorder.recordDeletion(record, Instant.now(), actor);
         repository.delete(record);
     }
 
@@ -187,6 +255,19 @@ public class ApplicationRecordService {
             String ownerId,
             UUID id,
             String authorization) {
+        return withdrawGeneratedApplication(
+                ownerId,
+                id,
+                authorization,
+                ApplicationCommandActor.user(ownerId));
+    }
+
+    @Transactional
+    public WithdrawGeneratedApplicationResponse withdrawGeneratedApplication(
+            String ownerId,
+            UUID id,
+            String authorization,
+            ApplicationCommandActor actor) {
         long startedAt = System.nanoTime();
         ApplicationRecord record = findOwnedApplicationForUpdate(ownerId, id);
 
@@ -196,6 +277,7 @@ public class ApplicationRecordService {
             throw new InvalidStatusException("Generated application can only be withdrawn before applying");
         }
 
+        eventRecorder.recordGeneratedWithdrawal(record, Instant.now(), actor);
         repository.delete(record);
         log.info("Owner-scoped generated application withdrawn durationMs={}",
                 (System.nanoTime() - startedAt) / 1_000_000);
@@ -236,7 +318,8 @@ public class ApplicationRecordService {
                 .build();
     }
 
-    private void freezeApplicationUsedReferences(ApplicationRecord record) {
+    private void freezeApplicationUsedReferences(
+            ApplicationRecord record, LocalDateTime occurredAt) {
         DocumentVersionReference cv = currentCvReference(record);
         DocumentVersionReference coverLetter = currentCoverLetterReference(record);
         if (cv == null || coverLetter == null) {
@@ -255,7 +338,27 @@ public class ApplicationRecordService {
                 coverLetter.getVersion());
         record.setApplicationUsedCoverLetterDocumentContentSha256(
                 coverLetter.getContentSha256());
-        record.setApplicationUsedAt(LocalDateTime.now());
+        record.setApplicationUsedAt(occurredAt);
+    }
+
+    private Instant resolveOccurredAt(
+            ApplicationRecord record, Instant requestedOccurredAt) {
+        Instant now = Instant.now();
+        if (requestedOccurredAt == null) {
+            return now;
+        }
+        Instant occurredAt = requestedOccurredAt;
+        if (record.getCreatedAt() != null
+                && occurredAt.isBefore(
+                        record.getCreatedAt().toInstant(ZoneOffset.UTC))) {
+            throw new InvalidRequestException(
+                    "occurredAt cannot be before the application was created.");
+        }
+        if (occurredAt.isAfter(now.plusSeconds(300))) {
+            throw new InvalidRequestException(
+                    "occurredAt cannot be more than five minutes in the future.");
+        }
+        return occurredAt;
     }
 
     private void setCurrentCvReference(

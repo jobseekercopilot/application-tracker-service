@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
+import java.time.Clock;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
@@ -42,6 +43,18 @@ public class ApplicationCreationService {
             String ownerId,
             String requestedIdempotencyKey,
             CreateApplicationRequest request) {
+        return createApplication(
+                ownerId,
+                requestedIdempotencyKey,
+                request,
+                ApplicationCommandActor.user(ownerId));
+    }
+
+    public ApplicationCreationOutcome createApplication(
+            String ownerId,
+            String requestedIdempotencyKey,
+            CreateApplicationRequest request,
+            ApplicationCommandActor actor) {
         NormalizedCommand command = normalize(ownerId, request);
         String fingerprint = fingerprint(command);
         String idempotencyKey =
@@ -72,7 +85,7 @@ public class ApplicationCreationService {
                 coverLetterReference);
 
         try {
-            ApplicationRecord persisted = transaction.create(candidate);
+            ApplicationRecord persisted = transaction.create(candidate, actor);
             return new ApplicationCreationOutcome(
                     persisted, candidate.getId().equals(persisted.getId()));
         } catch (DataIntegrityViolationException ignored) {
@@ -198,7 +211,7 @@ public class ApplicationCreationService {
         setCurrentCoverLetterReference(record, coverLetterReference);
 
         if (command.status() == ApplicationStatus.APPLIED) {
-            LocalDateTime appliedAt = LocalDateTime.now();
+            LocalDateTime appliedAt = LocalDateTime.now(Clock.systemUTC());
             record.setAppliedAt(appliedAt);
             freezePresentReferences(record, cvReference, coverLetterReference, appliedAt);
         }

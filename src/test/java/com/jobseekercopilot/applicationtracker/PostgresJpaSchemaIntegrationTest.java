@@ -13,13 +13,16 @@ import com.jobseekercopilot.applicationtracker.dto.CreateApplicationRequest;
 import com.jobseekercopilot.applicationtracker.dto.DocumentType;
 import com.jobseekercopilot.applicationtracker.dto.DocumentVersionReference;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationRecordRepository;
+import com.jobseekercopilot.applicationtracker.repository.ApplicationEventRepository;
 import com.jobseekercopilot.applicationtracker.service.ApplicationCreationResult;
+import com.jobseekercopilot.applicationtracker.service.ApplicationHistoryService;
 import com.jobseekercopilot.applicationtracker.service.ApplicationRecordService;
 import com.jobseekercopilot.applicationtracker.service.DocumentReferenceVerifier;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.RollbackException;
 import java.util.List;
+import java.sql.SQLException;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -30,6 +33,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.dao.DataAccessException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -68,6 +73,15 @@ class PostgresJpaSchemaIntegrationTest {
 
     @Autowired
     private ApplicationRecordRepository repository;
+
+    @Autowired
+    private ApplicationEventRepository eventRepository;
+
+    @Autowired
+    private ApplicationHistoryService historyService;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @Autowired
     private EntityManagerFactory entityManagerFactory;
@@ -226,6 +240,17 @@ class PostgresJpaSchemaIntegrationTest {
                     .get()
                     .extracting(ApplicationRecord::getId)
                     .isEqualTo(first.application().getId());
+            assertThat(eventRepository.countByApplicationIdAndUserId(
+                            first.application().getId(),
+                            "synthetic-idempotent-owner"))
+                    .isEqualTo(1);
+            assertThat(historyService.getHistory(
+                            "synthetic-idempotent-owner",
+                            first.application().getId(),
+                            0,
+                            50)
+                    .reconciled())
+                    .isTrue();
         } finally {
             executor.shutdownNow();
         }
@@ -255,5 +280,40 @@ class PostgresJpaSchemaIntegrationTest {
         assertThat(persisted.getAppliedAt()).isNotNull();
         assertThat(persisted.getCvDocumentId()).isNull();
         assertThat(persisted.getCoverLetterDocumentId()).isNull();
+    }
+
+    @Test
+    void databaseTriggerRejectsEventRewritesAndDeletion() {
+        ApplicationCreationResult result = service.createApplication(
+                "synthetic-immutable-owner",
+                "synthetic-immutable-attempt",
+                CreateApplicationRequest.builder()
+                        .userId("synthetic-immutable-owner")
+                        .jobId("synthetic-immutable-job")
+                        .canonicalJobId("synthetic-immutable-job")
+                        .provider("MANUAL")
+                        .externalJobId("synthetic-immutable-job")
+                        .jobTitle("Synthetic Support Engineer")
+                        .companyName("Example Employer")
+                        .provenance(ApplicationProvenance.MANUAL)
+                        .build());
+
+        assertThatThrownBy(() -> jdbcTemplate.update(
+                        "UPDATE application_events SET reason = ? WHERE application_id = ?",
+                        "rewritten",
+                        result.application().getId()))
+                .isInstanceOf(DataAccessException.class)
+                .hasRootCauseInstanceOf(SQLException.class)
+                .hasMessageContaining("append-only");
+        assertThatThrownBy(() -> jdbcTemplate.update(
+                        "DELETE FROM application_events WHERE application_id = ?",
+                        result.application().getId()))
+                .isInstanceOf(DataAccessException.class)
+                .hasRootCauseInstanceOf(SQLException.class)
+                .hasMessageContaining("append-only");
+        assertThat(eventRepository.countByApplicationIdAndUserId(
+                        result.application().getId(),
+                        "synthetic-immutable-owner"))
+                .isEqualTo(1);
     }
 }

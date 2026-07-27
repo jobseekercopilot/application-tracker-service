@@ -103,7 +103,7 @@ flowchart LR
 | Canonical job ID, provider/external identity and live job data | Job Service | Stores stable IDs and an application-time title/company/location snapshot. Legacy fallbacks are not a second job authority. |
 | Application ID and owner binding | Application Tracker | Generated and persisted once. All record access includes the authenticated owner boundary. |
 | Current application lifecycle state | Application Tracker | Enforces the approved transition matrix and optimistic version. Consumers display but do not remap or override it. |
-| Application activity history and milestone times | Application Tracker | APP-07 adds append-only events. Until then, `updatedAt` is not a history and must not be presented as one. |
+| Application activity history and milestone times | Application Tracker | Append-only events hold actual and recorded times; `updatedAt` is not history and must not be presented as one. |
 | Current application document selection | Application Tracker | Stores an owner-validated Document Store version reference while the record is editable. |
 | Document version used for an application | Application Tracker | Atomically freezes the exact IDs, families, versions and hashes when the application first progresses. |
 | Document content, type, approval, family/version, hash and retention | Document Store | Tracker references and validates these facts; it never stores content. |
