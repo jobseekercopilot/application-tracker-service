@@ -34,14 +34,18 @@ The OpenAPI `info.version` follows semantic versioning:
 - major: removed or renamed operations/fields, narrowed values, changed
   authentication, or any other consumer-breaking change.
 
-The version `2.1.0` contract retains the owner-scoped list operation's explicit
-service-token/Bearer alternatives, success model, stable `401`, `403` and `404`
-error models, and guaranteed application fields. It also adds the required
-response `version`, optional request `expectedVersion`, and stable `409` model
-for status-transition conflicts. These are backwards-compatible additive
-fields; consumers can opt into deterministic stale-write protection.
-`ApplicationContractPolicyTest` fails closed if either boundary is weakened
-accidentally.
+The contract is version `3.0.0`. It retains the explicitly defined owner-scoped
+list boundary and lifecycle concurrency metadata from `2.1.0`, and replaces
+raw-entity, owner-wide System Data operations with a constrained versioned seed
+request and scenario-scoped seed/reset/verify operations.
+
+The owner-scoped list operation explicitly defines its service-token/Bearer
+alternatives, success model, stable `401`, `403` and `404` error models, and
+guaranteed application fields. Status mutation publishes response `version`,
+optional request `expectedVersion`, and a stable `409` model. The System Data
+route replacement is intentionally breaking and therefore requires the major
+version. `ApplicationContractPolicyTest` fails closed if any of these
+boundaries is weakened accidentally.
 
 Breaking changes require an explicit producer review, a major version, and a
 coordinated consumer release. Rollback restores the previous tracked contract

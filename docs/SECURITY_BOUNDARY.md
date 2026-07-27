@@ -44,6 +44,13 @@ The producer identity cannot change application status, withdraw or delete.
 The reader identity cannot mutate. The environment-data credential cannot use
 the public API, and Bearer/service identities cannot use System Data.
 
+The credential alone cannot enable fixture operations. Application Tracker also
+requires the feature flag, exactly one active profile, and an exact `e2e`
+profile/allow-list match. Default, unknown, production and mixed profiles fail
+closed. Seed accepts a constrained `1.0.0` envelope rather than a JPA entity;
+the envelope owns the user/scenario boundary. Reset and verification use that
+same boundary. See [`SYSTEM_DATA_BOUNDARY.md`](SYSTEM_DATA_BOUNDARY.md).
+
 ## Denial semantics
 
 - Missing, malformed, expired, forged, wrong-algorithm, wrong-issuer,
@@ -69,6 +76,8 @@ APPLICATION_TRACKER_JWT_AUDIENCE
 APPLICATION_TRACKER_PRODUCER_TOKEN
 APPLICATION_TRACKER_READER_TOKEN
 ENVIRONMENT_DATA_TOKEN
+ENVIRONMENT_DATA_ENABLED
+ENVIRONMENT_DATA_ALLOWED_ENVIRONMENTS
 ```
 
 The repository uses synthetic, clearly test-only values in test resources.
@@ -85,6 +94,8 @@ it.
   routes.
 - Infrastructure injects credentials without writing their values into Compose
   files, shell history, CI logs or repository content.
+- The E2E overlay alone sets the explicit `e2e` profile and exact System Data
+  allow-list. Base and production-like deployments keep the facility disabled.
 
 Until those consumers are updated and integration-tested, APP-03 remains a beta
 blocker even when the Application Tracker implementation itself is green.

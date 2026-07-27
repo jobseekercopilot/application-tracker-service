@@ -9,7 +9,7 @@
     "license" : {
       "name" : "Proprietary and confidential"
     },
-    "version" : "2.1.0"
+    "version" : "3.0.0"
   },
   "servers" : [ {
     "url" : "http://localhost:8088",
@@ -20,18 +20,15 @@
     "description" : "Endpoints for tracking job applications"
   } ],
   "paths" : {
-    "/internal/system-data/seed/applications" : {
+    "/internal/system-data/v1/application-scenarios" : {
       "post" : {
-        "tags" : [ "application-tracker-system-data-controller" ],
+        "tags" : [ "System Data Applications" ],
         "operationId" : "seedApplications",
         "requestBody" : {
           "content" : {
             "application/json" : {
               "schema" : {
-                "type" : "array",
-                "items" : {
-                  "$ref" : "#/components/schemas/ApplicationRecord"
-                }
+                "$ref" : "#/components/schemas/SystemDataApplicationSeedRequest"
               }
             }
           },
@@ -41,7 +38,7 @@
           "200" : {
             "description" : "OK",
             "content" : {
-              "*/*" : {
+              "application/json" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/SystemDataResult"
                 }
@@ -188,16 +185,6 @@
           "required" : true
         },
         "responses" : {
-          "404" : {
-            "description" : "Application record not found",
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
           "200" : {
             "description" : "Status updated successfully",
             "content" : {
@@ -220,6 +207,16 @@
           },
           "409" : {
             "description" : "Invalid lifecycle transition or stale/concurrent record version",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404" : {
+            "description" : "Application record not found",
             "content" : {
               "application/json" : {
                 "schema" : {
@@ -316,23 +313,68 @@
         } ]
       }
     },
-    "/internal/system-data/verify/applications/{userId}" : {
+    "/internal/system-data/v1/application-scenarios/{scenarioId}/owners/{userId}" : {
       "get" : {
-        "tags" : [ "application-tracker-system-data-controller" ],
+        "tags" : [ "System Data Applications" ],
         "operationId" : "verifyApplications",
         "parameters" : [ {
+          "name" : "scenarioId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "pattern" : "[a-z0-9][a-z0-9-]{1,54}-v[1-9][0-9]{0,6}",
+            "type" : "string"
+          }
+        }, {
           "name" : "userId",
           "in" : "path",
           "required" : true,
           "schema" : {
-            "type" : "string"
+            "type" : "string",
+            "format" : "uuid"
           }
         } ],
         "responses" : {
           "200" : {
             "description" : "OK",
             "content" : {
-              "*/*" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SystemDataResult"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "environmentDataToken" : [ ]
+        } ]
+      },
+      "delete" : {
+        "tags" : [ "System Data Applications" ],
+        "operationId" : "resetApplications",
+        "parameters" : [ {
+          "name" : "scenarioId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "pattern" : "[a-z0-9][a-z0-9-]{1,54}-v[1-9][0-9]{0,6}",
+            "type" : "string"
+          }
+        }, {
+          "name" : "userId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/SystemDataResult"
                 }
@@ -438,12 +480,12 @@
           }
         } ],
         "responses" : {
-          "403" : {
-            "description" : "Authenticated identity lacks reader permission",
+          "404" : {
+            "description" : "Bearer subject and requested owner do not match",
             "content" : {
               "application/json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/SecurityErrorResponse"
+                  "$ref" : "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -471,12 +513,12 @@
               }
             }
           },
-          "404" : {
-            "description" : "Bearer subject and requested owner do not match",
+          "403" : {
+            "description" : "Authenticated identity lacks reader permission",
             "content" : {
               "application/json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ErrorResponse"
+                  "$ref" : "#/components/schemas/SecurityErrorResponse"
                 }
               }
             }
@@ -539,132 +581,86 @@
           "serviceToken" : [ ]
         } ]
       }
-    },
-    "/internal/system-data/scenario/{scenarioId}/applications/{userId}" : {
-      "delete" : {
-        "tags" : [ "application-tracker-system-data-controller" ],
-        "operationId" : "resetApplications",
-        "parameters" : [ {
-          "name" : "scenarioId",
-          "in" : "path",
-          "required" : true,
-          "schema" : {
-            "type" : "string"
-          }
-        }, {
-          "name" : "userId",
-          "in" : "path",
-          "required" : true,
-          "schema" : {
-            "type" : "string"
-          }
-        } ],
-        "responses" : {
-          "200" : {
-            "description" : "OK",
-            "content" : {
-              "*/*" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/SystemDataResult"
-                }
-              }
-            }
-          }
-        },
-        "security" : [ {
-          "environmentDataToken" : [ ]
-        } ]
-      }
     }
   },
   "components" : {
     "schemas" : {
-      "ApplicationRecord" : {
+      "SystemDataApplicationSeedRecord" : {
+        "required" : [ "companyName", "coverLetterDocumentContentSha256", "coverLetterDocumentFamilyId", "coverLetterDocumentId", "coverLetterDocumentVersion", "createdAt", "cvDocumentContentSha256", "cvDocumentFamilyId", "cvDocumentId", "cvDocumentVersion", "id", "jobId", "jobTitle", "status", "updatedAt" ],
         "type" : "object",
         "properties" : {
           "id" : {
             "type" : "string",
             "format" : "uuid"
           },
-          "userId" : {
-            "type" : "string"
-          },
           "jobId" : {
+            "maxLength" : 200,
+            "minLength" : 1,
             "type" : "string"
           },
           "canonicalJobId" : {
+            "maxLength" : 200,
+            "minLength" : 0,
             "type" : "string"
           },
           "provider" : {
+            "maxLength" : 64,
+            "minLength" : 0,
             "type" : "string"
           },
           "externalJobId" : {
+            "maxLength" : 200,
+            "minLength" : 0,
             "type" : "string"
           },
           "jobTitle" : {
+            "maxLength" : 300,
+            "minLength" : 1,
             "type" : "string"
           },
           "companyName" : {
+            "maxLength" : 300,
+            "minLength" : 1,
             "type" : "string"
           },
           "location" : {
+            "maxLength" : 300,
+            "minLength" : 0,
             "type" : "string"
           },
           "cvDocumentId" : {
-            "type" : "string"
+            "type" : "string",
+            "format" : "uuid"
           },
           "cvDocumentFamilyId" : {
-            "type" : "string"
+            "type" : "string",
+            "format" : "uuid"
           },
           "cvDocumentVersion" : {
+            "minimum" : 1,
             "type" : "integer",
             "format" : "int32"
           },
           "cvDocumentContentSha256" : {
+            "pattern" : "[a-f0-9]{64}",
             "type" : "string"
           },
           "coverLetterDocumentId" : {
-            "type" : "string"
+            "type" : "string",
+            "format" : "uuid"
           },
           "coverLetterDocumentFamilyId" : {
-            "type" : "string"
+            "type" : "string",
+            "format" : "uuid"
           },
           "coverLetterDocumentVersion" : {
+            "minimum" : 1,
             "type" : "integer",
             "format" : "int32"
           },
           "coverLetterDocumentContentSha256" : {
+            "pattern" : "[a-f0-9]{64}",
             "type" : "string"
-          },
-          "applicationUsedCvDocumentId" : {
-            "type" : "string"
-          },
-          "applicationUsedCvDocumentFamilyId" : {
-            "type" : "string"
-          },
-          "applicationUsedCvDocumentVersion" : {
-            "type" : "integer",
-            "format" : "int32"
-          },
-          "applicationUsedCvDocumentContentSha256" : {
-            "type" : "string"
-          },
-          "applicationUsedCoverLetterDocumentId" : {
-            "type" : "string"
-          },
-          "applicationUsedCoverLetterDocumentFamilyId" : {
-            "type" : "string"
-          },
-          "applicationUsedCoverLetterDocumentVersion" : {
-            "type" : "integer",
-            "format" : "int32"
-          },
-          "applicationUsedCoverLetterDocumentContentSha256" : {
-            "type" : "string"
-          },
-          "applicationUsedAt" : {
-            "type" : "string",
-            "format" : "date-time"
           },
           "status" : {
             "type" : "string",
@@ -681,12 +677,42 @@
           "appliedAt" : {
             "type" : "string",
             "format" : "date-time"
-          },
-          "version" : {
-            "type" : "integer",
-            "format" : "int64"
           }
-        }
+        },
+        "additionalProperties" : false,
+        "description" : "Constrained application fixture record; ownership and scenario come from the request envelope"
+      },
+      "SystemDataApplicationSeedRequest" : {
+        "required" : [ "applications", "scenarioId", "schemaVersion", "userId" ],
+        "type" : "object",
+        "properties" : {
+          "schemaVersion" : {
+            "pattern" : "2\\.0\\.0",
+            "type" : "string",
+            "example" : "2.0.0"
+          },
+          "scenarioId" : {
+            "maxLength" : 64,
+            "minLength" : 0,
+            "pattern" : "[a-z0-9][a-z0-9-]{1,54}-v[1-9][0-9]{0,6}",
+            "type" : "string",
+            "example" : "demo-ready-v1"
+          },
+          "userId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "applications" : {
+            "maxItems" : 100,
+            "minItems" : 0,
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/SystemDataApplicationSeedRecord"
+            }
+          }
+        },
+        "additionalProperties" : false,
+        "description" : "Versioned, owner- and scenario-scoped Application Tracker fixture request"
       },
       "SystemDataResult" : {
         "type" : "object",

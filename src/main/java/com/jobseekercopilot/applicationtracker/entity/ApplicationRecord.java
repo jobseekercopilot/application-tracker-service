@@ -32,6 +32,9 @@ public class ApplicationRecord {
     @Column(nullable = false)
     private String userId;
 
+    @Column(length = 64)
+    private String fixtureScenarioId;
+
     @Column(nullable = false)
     private String jobId;
 

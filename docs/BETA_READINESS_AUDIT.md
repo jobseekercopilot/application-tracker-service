@@ -36,6 +36,10 @@ enablement or represent a durable, access-controlled source of truth.
   commands idempotent, publishes record versions and returns stable `409`
   conflicts for invalid, stale or concurrent writes. Unit, HTTP and real
   PostgreSQL tests cover the complete matrix and competing writers.
+- APP-11 hardens the System Data producer contract as `3.0.0`: only an explicit
+  E2E runtime can use its independent identity; seed uses constrained DTOs; and
+  deterministic seed, reset and verification are owner-and-scenario scoped.
+  System Data and Infrastructure rollout remain required before integrated use.
 
 ## Critical findings
 
@@ -88,12 +92,14 @@ deletes the application, and is followed by a second best-effort hard delete in
 Job Finder Gateway. Failures can leave orphaned documents, missing references or
 an application state that cannot be reconciled.
 
-### Unsafe deletion and environment-data control
+### Unsafe user deletion; System Data boundary implemented, rollout incomplete
 
 The unrestricted delete endpoint permanently removes application history without
-an archive, retention or dependent-document policy. System Data can seed arbitrary
-entity graphs when enabled; allowed environments include `default`, and there is
-no service authentication.
+an archive, retention or dependent-document policy. APP-11 removes raw entity
+fixture writes and owner-wide reset/verification, rejects default/unknown/mixed
+profiles and retains the independent APP-03 identity. The producer is intentionally
+incompatible with the old System Data caller; that consumer and the E2E
+Infrastructure profile must adopt `3.0.0` before this blocker can close.
 
 ### Query, privacy and operational limits
 

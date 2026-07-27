@@ -8,6 +8,7 @@ import io.swagger.v3.oas.models.info.License;
 import io.swagger.v3.oas.models.security.SecurityScheme;
 import io.swagger.v3.oas.models.servers.Server;
 import java.util.List;
+import org.springdoc.core.customizers.OpenApiCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -56,7 +57,7 @@ public class OpenApiConfig {
                                 - REJECTED_BY_USER - Offer or opportunity rejected by the user
                                 - WITHDRAWN - User withdrew their application
                                 """)
-                        .version("2.1.0")
+                        .version("3.0.0")
                         .contact(new Contact()
                                 .name("Jobseeker Copilot"))
                         .license(new License()
@@ -64,5 +65,18 @@ public class OpenApiConfig {
                 .servers(List.of(new Server()
                         .url("http://localhost:8088")
                         .description("Local development")));
+    }
+
+    @Bean
+    public OpenApiCustomizer closedSystemDataSchemas() {
+        return openApi -> List.of(
+                        "SystemDataApplicationSeedRequest",
+                        "SystemDataApplicationSeedRecord")
+                .forEach(name -> {
+                    var schema = openApi.getComponents().getSchemas().get(name);
+                    if (schema != null) {
+                        schema.setAdditionalProperties(false);
+                    }
+                });
     }
 }

@@ -37,14 +37,19 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
-@SpringBootTest(properties = "environment-data.enabled=true")
+@SpringBootTest(properties = {
+        "environment-data.enabled=true",
+        "environment-data.allowed-environments=e2e"
+})
 @AutoConfigureMockMvc
+@ActiveProfiles("e2e")
 class ApplicationSecurityIntegrationTest {
 
     private static final String PRODUCER_TOKEN =
@@ -288,20 +293,34 @@ class ApplicationSecurityIntegrationTest {
 
     @Test
     void environmentDataIdentityIsIndependentAndHealthIsPublic() throws Exception {
-        saveApplication("alice", ApplicationStatus.DOCUMENTS_GENERATED);
+        UUID ownerId = UUID.randomUUID();
+        String scenarioId = "security-check-v1";
+        ApplicationRecord fixture =
+                saveApplication(ownerId.toString(), ApplicationStatus.DOCUMENTS_GENERATED);
+        fixture.setFixtureScenarioId(scenarioId);
+        repository.save(fixture);
 
-        mockMvc.perform(get("/internal/system-data/verify/applications/{userId}", "alice")
+        mockMvc.perform(get(
+                                "/internal/system-data/v1/application-scenarios/{scenarioId}/owners/{userId}",
+                                scenarioId,
+                                ownerId)
                         .header(
                                 ApplicationServiceIdentityFilter.ENVIRONMENT_DATA_HEADER,
                                 ENVIRONMENT_DATA_TOKEN))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.recordsAffected").value(1));
 
-        mockMvc.perform(get("/internal/system-data/verify/applications/{userId}", "alice")
+        mockMvc.perform(get(
+                                "/internal/system-data/v1/application-scenarios/{scenarioId}/owners/{userId}",
+                                scenarioId,
+                                ownerId)
                         .header(HttpHeaders.AUTHORIZATION, authorization("alice")))
                 .andExpect(status().isForbidden());
 
-        mockMvc.perform(get("/internal/system-data/verify/applications/{userId}", "alice")
+        mockMvc.perform(get(
+                                "/internal/system-data/v1/application-scenarios/{scenarioId}/owners/{userId}",
+                                scenarioId,
+                                ownerId)
                         .header(ApplicationServiceIdentityFilter.SERVICE_HEADER, PRODUCER_TOKEN))
                 .andExpect(status().isUnauthorized());
 

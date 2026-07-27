@@ -17,6 +17,8 @@ public interface ApplicationRecordRepository extends JpaRepository<ApplicationRe
 
     List<ApplicationRecord> findByUserId(String userId);
 
+    List<ApplicationRecord> findByUserIdAndFixtureScenarioId(String userId, String fixtureScenarioId);
+
     Optional<ApplicationRecord> findByIdAndUserId(UUID id, String userId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

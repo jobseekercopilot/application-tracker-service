@@ -7,7 +7,7 @@ import java.util.List;
 @ConfigurationProperties(prefix = "environment-data")
 public class EnvironmentDataProperties {
     private boolean enabled = false;
-    private List<String> allowedEnvironments = List.of("local", "test", "demo", "default");
+    private List<String> allowedEnvironments = List.of("e2e");
 
     public boolean isEnabled() {
         return enabled;

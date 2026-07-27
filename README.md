@@ -38,10 +38,11 @@ verification before building the image. The Docker build compiles the test
 sources but does not execute the PostgreSQL Testcontainers suite because a
 standard image build must not receive the host Docker socket.
 
-The version `2.1.0` contract adds backwards-compatible lifecycle concurrency
-metadata while retaining the owner-scoped list operation's explicit response
-model and stable authentication, authorization and owner-mismatch error schemas
-used by read-only consumers such as Job Matching.
+The version `3.0.0` contract retains the owner-scoped public list and lifecycle
+concurrency contracts while replacing the unsafe raw-entity System Data routes
+with a constrained, versioned, owner-and-scenario-scoped fixture boundary. It
+continues to publish the explicit response and stable authentication,
+authorization, conflict and owner-mismatch error schemas used by consumers.
 
 ## Security boundary
 
@@ -50,10 +51,12 @@ RS256 Bearer access token and derive ownership only from JWT `sub`. Approved
 backend callers use distinct runtime-injected producer or reader credentials
 with least-privilege routes and explicit owner context. System Data uses a
 third independent credential and remains disabled unless explicitly enabled in
-an allowed non-production environment.
+the single explicit `e2e` profile.
 
 See [`docs/SECURITY_BOUNDARY.md`](docs/SECURITY_BOUNDARY.md) for the claims,
 authorization matrix, denial semantics, configuration and rollout contract.
+See [`docs/SYSTEM_DATA_BOUNDARY.md`](docs/SYSTEM_DATA_BOUNDARY.md) for the
+versioned fixture schema, scenario isolation rules and operational runbook.
 
 | Environment variable | Purpose |
 | --- | --- |
@@ -71,6 +74,8 @@ authorization matrix, denial semantics, configuration and rollout contract.
 | `APPLICATION_TRACKER_DATABASE_ENCRYPTION_KEY_REFERENCE` | Non-secret managed key identifier |
 | `APPLICATION_TRACKER_DATABASE_BACKUP_ENCRYPTION_ENABLED` | Encrypted-backup attestation |
 | `APPLICATION_TRACKER_DATABASE_BACKUP_KEY_REFERENCE` | Non-secret backup key identifier |
+| `ENVIRONMENT_DATA_ENABLED` | Must be `true` to enable fixture operations |
+| `ENVIRONMENT_DATA_ALLOWED_ENVIRONMENTS` | Must contain exactly `e2e` |
 
 All three service credentials must contain at least 32 bytes, must be distinct
 and must be supplied at runtime. Do not put real values in source, examples,
