@@ -5,6 +5,8 @@ import com.jobseekercopilot.applicationtracker.dto.ApplicationRecordResponse;
 import com.jobseekercopilot.applicationtracker.dto.UpdateStatusRequest;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationRecord;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationStatus;
+import com.jobseekercopilot.applicationtracker.entity.DocumentReferenceReconciliationStatus;
+import com.jobseekercopilot.applicationtracker.repository.ApplicationDocumentReconciliationRepository;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationRecordRepository;
 import com.jobseekercopilot.applicationtracker.security.ApplicationServiceIdentityFilter;
 import com.jobseekercopilot.applicationtracker.service.ApplicationRecordService;
@@ -50,10 +52,15 @@ class SystemDataApplicationIntegrationTest {
     private ApplicationRecordRepository repository;
 
     @Autowired
+    private ApplicationDocumentReconciliationRepository
+            reconciliationRepository;
+
+    @Autowired
     private ApplicationRecordService applicationRecordService;
 
     @BeforeEach
     void cleanDatabase() {
+        reconciliationRepository.deleteAll();
         repository.deleteAll();
     }
 
@@ -88,6 +95,16 @@ class SystemDataApplicationIntegrationTest {
         assertEquals(
                 firstUpdatedAt,
                 repository.findById(generated.id()).orElseThrow().getUpdatedAt());
+        assertEquals(
+                DocumentReferenceReconciliationStatus.HEALTHY,
+                reconciliationRepository.findById(generated.id())
+                        .orElseThrow()
+                        .getStatus());
+        assertEquals(
+                DocumentReferenceReconciliationStatus.HEALTHY,
+                reconciliationRepository.findById(applied.id())
+                        .orElseThrow()
+                        .getStatus());
         assertEquals(ordinary.getId(), repository.findById(ordinary.getId()).orElseThrow().getId());
 
         mockMvc.perform(get(
@@ -177,6 +194,7 @@ class SystemDataApplicationIntegrationTest {
                 .andExpect(jsonPath("$.details.userId").doesNotExist());
 
         assertFalse(repository.existsById(scenarioARecord));
+        assertFalse(reconciliationRepository.existsById(scenarioARecord));
         assertEquals(SCENARIO_B, repository.findById(scenarioBRecord).orElseThrow().getFixtureScenarioId());
         assertEquals(
                 otherOwnerId.toString(),
@@ -219,6 +237,7 @@ class SystemDataApplicationIntegrationTest {
                 .andExpect(jsonPath("$.recordsAffected").value(0));
 
         assertFalse(repository.existsById(scenarioARecord));
+        assertFalse(reconciliationRepository.existsById(scenarioARecord));
         assertEquals(SCENARIO_B, repository.findById(scenarioBRecord).orElseThrow().getFixtureScenarioId());
     }
 

@@ -49,6 +49,9 @@ management:
         include: health
 
 application-tracker:
+  reconciliation:
+    initial-delay-ms: ${APPLICATION_DOCUMENT_RECONCILIATION_INITIAL_DELAY_MS:45000}
+    delay-ms: ${APPLICATION_DOCUMENT_RECONCILIATION_DELAY_MS:30000}
   workflows:
     recovery-initial-delay-ms: ${APPLICATION_WORKFLOW_RECOVERY_INITIAL_DELAY_MS:30000}
     recovery-delay-ms: ${APPLICATION_WORKFLOW_RECOVERY_DELAY_MS:30000}

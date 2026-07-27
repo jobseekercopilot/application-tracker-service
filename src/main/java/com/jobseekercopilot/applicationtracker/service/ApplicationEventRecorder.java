@@ -66,6 +66,22 @@ public class ApplicationEventRecorder {
                 record.getVersion());
     }
 
+    public ApplicationEvent recordDocumentReferencesReconciled(
+            ApplicationRecord record,
+            Instant occurredAt,
+            ApplicationCommandActor actor,
+            String reason) {
+        return persist(
+                record,
+                ApplicationEventType.DOCUMENT_REFERENCES_RECONCILED,
+                record.getStatus(),
+                record.getStatus(),
+                occurredAt,
+                actor,
+                reason,
+                record.getVersion());
+    }
+
     public ApplicationEvent recordGeneratedWithdrawal(
             ApplicationRecord record,
             Instant occurredAt,

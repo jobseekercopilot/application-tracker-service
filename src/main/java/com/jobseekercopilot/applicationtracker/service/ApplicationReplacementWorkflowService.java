@@ -42,6 +42,8 @@ public class ApplicationReplacementWorkflowService {
     private final ApplicationRecordRepository applicationRepository;
     private final DocumentReferenceVerifier documentReferenceVerifier;
     private final ApplicationEventRecorder eventRecorder;
+    private final ApplicationDocumentReconciliationService
+            reconciliationService;
     private final PlatformTransactionManager transactionManager;
 
     public DocumentReplacementWorkflowResponse begin(
@@ -325,6 +327,7 @@ public class ApplicationReplacementWorkflowService {
                         workflow.getSource()),
                 workflow.getDocumentType()
                         + " current approved reference replaced by workflow.");
+        reconciliationService.markHealthy(updated);
         workflow.setStatus(ApplicationDocumentWorkflowStatus.COMPLETED);
         workflow.setRetryable(false);
         workflow.setLastErrorCode(null);

@@ -5,6 +5,7 @@ import com.jobseekercopilot.applicationtracker.dto.ApplicationHistoryResponse;
 import com.jobseekercopilot.applicationtracker.dto.BeginDocumentReplacementRequest;
 import com.jobseekercopilot.applicationtracker.dto.CreateApplicationRequest;
 import com.jobseekercopilot.applicationtracker.dto.DocumentReplacementWorkflowResponse;
+import com.jobseekercopilot.applicationtracker.dto.DocumentReferenceReconciliationResponse;
 import com.jobseekercopilot.applicationtracker.dto.RegisterReplacementDocumentRequest;
 import com.jobseekercopilot.applicationtracker.dto.UpdateStatusRequest;
 import com.jobseekercopilot.applicationtracker.dto.UpdateDocumentReferenceRequest;
@@ -15,6 +16,7 @@ import com.jobseekercopilot.applicationtracker.security.ApplicationActorResolver
 import com.jobseekercopilot.applicationtracker.security.ApplicationOwnerResolver;
 import com.jobseekercopilot.applicationtracker.service.ApplicationCreationResult;
 import com.jobseekercopilot.applicationtracker.service.ApplicationHistoryService;
+import com.jobseekercopilot.applicationtracker.service.ApplicationDocumentReconciliationService;
 import com.jobseekercopilot.applicationtracker.service.ApplicationRecordService;
 import com.jobseekercopilot.applicationtracker.service.ApplicationReplacementWorkflowService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -61,6 +63,8 @@ public class ApplicationRecordController {
 
     private final ApplicationRecordService service;
     private final ApplicationReplacementWorkflowService replacementWorkflowService;
+    private final ApplicationDocumentReconciliationService
+            reconciliationService;
     private final ApplicationHistoryService historyService;
     private final ApplicationOwnerResolver ownerResolver;
     private final ApplicationActorResolver actorResolver;
@@ -123,6 +127,45 @@ public class ApplicationRecordController {
         String ownerId = ownerResolver.resolve(authentication, requestedOwner);
         ApplicationRecordResponse response = service.getApplicationById(ownerId, id);
         return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/{id}/document-reference-reconciliation")
+    @Operation(
+            summary = "Get durable document-reference reconciliation state",
+            description = "Reports whether current and frozen application references are healthy, safely repaired, invalid or temporarily unverifiable")
+    @SecurityRequirement(name = "bearerAuth")
+    @SecurityRequirement(name = "serviceToken")
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Owner-scoped reconciliation state returned",
+                    content = @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(
+                                    implementation =
+                                            DocumentReferenceReconciliationResponse.class))),
+            @ApiResponse(
+                    responseCode = "404",
+                    description = "Application record not found",
+                    content = @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<DocumentReferenceReconciliationResponse>
+            getDocumentReferenceReconciliation(
+                    @Parameter(description = "UUID of the application record")
+                    @PathVariable UUID id,
+                    @Parameter(description = "Required owner context for approved service identities")
+                    @RequestHeader(
+                            value = ApplicationOwnerResolver.OWNER_HEADER,
+                            required = false)
+                    String requestedOwner,
+                    @Parameter(hidden = true)
+                    Authentication authentication) {
+        String ownerId =
+                ownerResolver.resolve(authentication, requestedOwner);
+        return ResponseEntity.ok(
+                reconciliationService.status(ownerId, id));
     }
 
     @GetMapping(

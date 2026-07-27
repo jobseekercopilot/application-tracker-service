@@ -24,7 +24,7 @@ class ApplicationContractPolicyTest {
         JsonNode operation =
                 contract.at("/paths/~1api~1v1~1applications~1user~1{userId}/get");
 
-        assertEquals("3.3.0", contract.at("/info/version").asText());
+        assertEquals("3.4.0", contract.at("/info/version").asText());
         assertEquals("getApplicationsForUser", operation.path("operationId").asText());
         assertEquals(
                         Set.of("bearerAuth", "serviceToken"),
@@ -173,6 +173,64 @@ class ApplicationContractPolicyTest {
         assertTrue(eventProperties.has("actorId"));
         assertTrue(eventProperties.has("source"));
         assertTrue(eventProperties.has("recordVersion"));
+    }
+
+    @Test
+    void documentReferenceReconciliationContractIsOwnerScopedAndDurable()
+            throws Exception {
+        JsonNode contract = objectMapper.readTree(CONTRACT.toFile());
+        JsonNode operation = contract.at(
+                "/paths/~1api~1v1~1applications~1{id}~1document-reference-reconciliation/get");
+
+        assertEquals(
+                "getDocumentReferenceReconciliation",
+                operation.path("operationId").asText());
+        assertEquals(
+                Set.of("bearerAuth", "serviceToken"),
+                StreamSupport.stream(
+                                operation.path("security").spliterator(),
+                                false)
+                        .flatMap(requirement -> StreamSupport.stream(
+                                Spliterators.spliteratorUnknownSize(
+                                        requirement.fieldNames(), 0),
+                                false))
+                        .collect(Collectors.toSet()));
+        assertEquals(
+                "#/components/schemas/DocumentReferenceReconciliationResponse",
+                operation.at(
+                                "/responses/200/content/application~1json/schema/$ref")
+                        .asText());
+        assertEquals(
+                "#/components/schemas/ErrorResponse",
+                operation.at(
+                                "/responses/404/content/application~1json/schema/$ref")
+                        .asText());
+
+        JsonNode properties = contract.at(
+                "/components/schemas/DocumentReferenceReconciliationResponse/properties");
+        assertTrue(properties.has("applicationId"));
+        assertTrue(properties.has("status"));
+        assertTrue(properties.has("issueCodes"));
+        assertTrue(properties.has("checkedAt"));
+        assertTrue(properties.has("lastHealthyAt"));
+        assertTrue(properties.has("lastRepairedAt"));
+        assertTrue(properties.has("attemptCount"));
+        assertTrue(properties.has("repairCount"));
+        assertTrue(properties.has("applicationRecordVersion"));
+        assertEquals(
+                Set.of(
+                        "PENDING",
+                        "HEALTHY",
+                        "REPAIRED",
+                        "INVALID",
+                        "UNAVAILABLE"),
+                StreamSupport.stream(
+                                properties.path("status")
+                                        .path("enum")
+                                        .spliterator(),
+                                false)
+                        .map(JsonNode::asText)
+                        .collect(Collectors.toSet()));
     }
 
     @Test

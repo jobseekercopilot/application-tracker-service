@@ -17,9 +17,10 @@ environment.
 
 ## Contract
 
-The producer OpenAPI version is `3.3.0`. Version `3.3.0` adds backward-compatible
-durable document-replacement operations and version `3.2.0` added durable
-generated-withdrawal status. Version `3.0.0` introduced the breaking
+The producer OpenAPI version is `3.4.0`. Version `3.4.0` adds the
+backward-compatible owner-scoped document-reference reconciliation operation,
+version `3.3.0` added durable document-replacement operations and version
+`3.2.0` added durable generated-withdrawal status. Version `3.0.0` introduced the breaking
 major change that removes the
 legacy raw-entity and owner-wide operations:
 
@@ -82,6 +83,11 @@ Both document references carry the exact synthetic Document Store family,
 version and content checksum used by the scenario. A progressed fixture freezes
 those references as its application-used evidence; a generated-only fixture
 leaves application-used evidence unset until its first accepted transition.
+Tracker records those controlled synthetic references as `HEALTHY` in the same
+fixture transaction and removes the derived reconciliation row on scenario
+reset. The E2E orchestrator must seed the matching Store fixture first and
+verify both service boundaries; this shortcut is unavailable outside the
+fail-closed `e2e` profile.
 
 ## Data isolation and repeatability
 
@@ -104,7 +110,7 @@ partially replaced scenario.
 
 ## Operational use
 
-System Data must adopt this `3.3.0` producer contract before the integrated E2E
+System Data must adopt this `3.4.0` producer contract before the integrated E2E
 journey can use APP-11. Infrastructure must activate the explicit `e2e` profile
 only in the isolated E2E Compose overlay. Base/developer Compose must leave this
 boundary disabled.

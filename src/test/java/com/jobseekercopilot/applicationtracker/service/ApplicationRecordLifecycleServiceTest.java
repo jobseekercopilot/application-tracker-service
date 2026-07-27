@@ -41,6 +41,9 @@ class ApplicationRecordLifecycleServiceTest {
     @Mock
     private ApplicationWithdrawalWorkflowService withdrawalWorkflowService;
 
+    @Mock
+    private ApplicationDocumentReconciliationService reconciliationService;
+
     private ApplicationRecordService service;
 
     @BeforeEach
@@ -50,7 +53,8 @@ class ApplicationRecordLifecycleServiceTest {
                 documentReferenceVerifier,
                 applicationCreationService,
                 eventRecorder,
-                withdrawalWorkflowService);
+                withdrawalWorkflowService,
+                reconciliationService);
     }
 
     @Test

@@ -51,7 +51,7 @@ class PostgresApplicationRecoveryIntegrationTest {
                         assertThat(((SQLException) error).getSQLState()).startsWith("28"));
 
         Flyway upgraded = flyway(POSTGRES.getJdbcUrl());
-        assertThat(upgraded.migrate().migrationsExecuted).isEqualTo(8);
+        assertThat(upgraded.migrate().migrationsExecuted).isEqualTo(9);
         upgraded.validate();
 
         try (Connection connection = primaryConnection()) {
@@ -59,6 +59,7 @@ class PostgresApplicationRecoveryIntegrationTest {
             assertLegacyReaderStillWorks(connection, applicationId);
             assertFixtureIndexIsScoped(connection);
             assertLegacySnapshotEvent(connection, applicationId);
+            assertLegacyReconciliationPending(connection, applicationId);
         }
 
         // Discard application-side Flyway/JDBC state and repeat the startup path
@@ -68,6 +69,8 @@ class PostgresApplicationRecoveryIntegrationTest {
         try (Connection afterRestart = primaryConnection()) {
             assertUpgradedApplication(afterRestart, applicationId);
             assertLegacySnapshotEvent(afterRestart, applicationId);
+            assertLegacyReconciliationPending(
+                    afterRestart, applicationId);
         }
 
         assertExecSucceeded(POSTGRES.execInContainer(
@@ -91,6 +94,7 @@ class PostgresApplicationRecoveryIntegrationTest {
         try (Connection restored = restoredConnection()) {
             assertUpgradedApplication(restored, applicationId);
             assertLegacySnapshotEvent(restored, applicationId);
+            assertLegacyReconciliationPending(restored, applicationId);
             assertEventHistoryIsAppendOnly(restored, applicationId);
             try (PreparedStatement delete = restored.prepareStatement(
                     "DELETE FROM application_records WHERE id = ?")) {
@@ -98,6 +102,8 @@ class PostgresApplicationRecoveryIntegrationTest {
                 assertThat(delete.executeUpdate()).isEqualTo(1);
             }
             assertThat(count(restored, applicationId)).isZero();
+            assertThat(reconciliationCount(restored, applicationId))
+                    .isZero();
             assertLegacySnapshotEvent(restored, applicationId);
         }
     }
@@ -285,6 +291,33 @@ class PostgresApplicationRecoveryIntegrationTest {
         }
     }
 
+    private void assertLegacyReconciliationPending(
+            Connection connection, UUID applicationId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT user_id, status, issue_codes, checked_at,
+                       attempt_count, repair_count,
+                       application_record_version
+                FROM application_document_reconciliations
+                WHERE application_id = ?
+                """)) {
+            statement.setObject(1, applicationId);
+            try (ResultSet result = statement.executeQuery()) {
+                assertThat(result.next()).isTrue();
+                assertThat(result.getString("user_id"))
+                        .isEqualTo("synthetic-recovery-owner");
+                assertThat(result.getString("status"))
+                        .isEqualTo("PENDING");
+                assertThat(result.getString("issue_codes")).isNull();
+                assertThat(result.getObject("checked_at")).isNull();
+                assertThat(result.getInt("attempt_count")).isZero();
+                assertThat(result.getInt("repair_count")).isZero();
+                assertThat(result.getLong("application_record_version"))
+                        .isZero();
+                assertThat(result.next()).isFalse();
+            }
+        }
+    }
+
     private void assertEventHistoryIsAppendOnly(
             Connection connection, UUID applicationId) {
         assertThatThrownBy(() -> {
@@ -327,6 +360,19 @@ class PostgresApplicationRecoveryIntegrationTest {
             throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT COUNT(*) FROM application_records WHERE id = ?")) {
+            statement.setObject(1, applicationId);
+            try (ResultSet result = statement.executeQuery()) {
+                assertThat(result.next()).isTrue();
+                return result.getLong(1);
+            }
+        }
+    }
+
+    private long reconciliationCount(
+            Connection connection, UUID applicationId)
+            throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT COUNT(*) FROM application_document_reconciliations WHERE application_id = ?")) {
             statement.setObject(1, applicationId);
             try (ResultSet result = statement.executeQuery()) {
                 assertThat(result.next()).isTrue();

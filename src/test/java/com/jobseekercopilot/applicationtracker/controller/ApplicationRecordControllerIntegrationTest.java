@@ -6,14 +6,17 @@ import com.jobseekercopilot.applicationtracker.dto.CreateApplicationRequest;
 import com.jobseekercopilot.applicationtracker.dto.DocumentType;
 import com.jobseekercopilot.applicationtracker.dto.DocumentVersionReference;
 import com.jobseekercopilot.applicationtracker.dto.UpdateStatusRequest;
+import com.jobseekercopilot.applicationtracker.entity.ApplicationDocumentReconciliation;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationRecord;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationProvenance;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationStatus;
+import com.jobseekercopilot.applicationtracker.entity.DocumentReferenceReconciliationStatus;
 import com.jobseekercopilot.applicationtracker.exception.DocumentReferenceUnavailableException;
 import com.jobseekercopilot.applicationtracker.exception.InvalidDocumentReferenceException;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationRecordRepository;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationEventRepository;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationDocumentWorkflowRepository;
+import com.jobseekercopilot.applicationtracker.repository.ApplicationDocumentReconciliationRepository;
 import com.jobseekercopilot.applicationtracker.security.ApplicationOwnerResolver;
 import com.jobseekercopilot.applicationtracker.security.ApplicationServiceIdentityFilter;
 import com.jobseekercopilot.applicationtracker.service.DocumentStoreWorkflowClient;
@@ -94,6 +97,10 @@ class ApplicationRecordControllerIntegrationTest {
     private ApplicationDocumentWorkflowRepository workflowRepository;
 
     @Autowired
+    private ApplicationDocumentReconciliationRepository
+            reconciliationRepository;
+
+    @Autowired
     private ApplicationReplacementWorkflowService replacementWorkflowService;
 
     @MockBean
@@ -105,6 +112,7 @@ class ApplicationRecordControllerIntegrationTest {
     @BeforeEach
     void setUp() {
         workflowRepository.deleteAll();
+        reconciliationRepository.deleteAll();
         repository.deleteAll();
         when(documentReferenceVerifier.verify(
                         anyString(),
@@ -139,6 +147,53 @@ class ApplicationRecordControllerIntegrationTest {
                 .andExpect(jsonPath("$.companyName").value("Example Ltd"))
                 .andExpect(jsonPath("$.status").value("DOCUMENTS_GENERATED"))
                 .andExpect(jsonPath("$.id").isNotEmpty());
+    }
+
+    @Test
+    void documentReferenceReconciliationIsOwnerScopedAndVisible()
+            throws Exception {
+        CreateApplicationRequest request = CreateApplicationRequest.builder()
+                .userId("reconciliation-owner")
+                .jobId("reconciliation-job")
+                .jobTitle("Java Developer")
+                .companyName("Example Ltd")
+                .cvDocumentId(CV_ID)
+                .coverLetterDocumentId(COVER_LETTER_ID)
+                .build();
+
+        String response = mockMvc.perform(post("/api/v1/applications")
+                        .header(
+                                HttpHeaders.AUTHORIZATION,
+                                authorization("reconciliation-owner"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String applicationId =
+                objectMapper.readTree(response).get("id").asText();
+
+        mockMvc.perform(get(
+                        "/api/v1/applications/{id}/document-reference-reconciliation",
+                        applicationId)
+                        .header(
+                                HttpHeaders.AUTHORIZATION,
+                                authorization("reconciliation-owner")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.applicationId")
+                        .value(applicationId))
+                .andExpect(jsonPath("$.status").value("HEALTHY"))
+                .andExpect(jsonPath("$.issueCodes", hasSize(0)))
+                .andExpect(jsonPath("$.checkedAt").isNotEmpty());
+
+        mockMvc.perform(get(
+                        "/api/v1/applications/{id}/document-reference-reconciliation",
+                        applicationId)
+                        .header(
+                                HttpHeaders.AUTHORIZATION,
+                                authorization("different-owner")))
+                .andExpect(status().isNotFound());
     }
 
     @Test
@@ -464,7 +519,6 @@ class ApplicationRecordControllerIntegrationTest {
                 .coverLetterDocumentContentSha256("b".repeat(64))
                 .status(ApplicationStatus.DOCUMENTS_GENERATED)
                 .build());
-
         mockMvc.perform(get("/api/v1/applications/{id}", saved.getId())
                         .header(HttpHeaders.AUTHORIZATION, authorization("user-123")))
                 .andExpect(status().isOk())
@@ -543,6 +597,7 @@ class ApplicationRecordControllerIntegrationTest {
                 .coverLetterDocumentContentSha256("b".repeat(64))
                 .status(ApplicationStatus.DOCUMENTS_GENERATED)
                 .build());
+        saveHealthyReconciliation(saved);
 
         UpdateStatusRequest request = UpdateStatusRequest.builder()
                 .status("APPLIED")
@@ -564,6 +619,55 @@ class ApplicationRecordControllerIntegrationTest {
                         .value(COVER_LETTER_ID.toString()))
                 .andExpect(jsonPath("$.appliedAt").isNotEmpty())
                 .andExpect(jsonPath("$.version").value(1));
+    }
+
+    @Test
+    void updateStatus_WithUnhealthyDocumentReferences_ShouldReturn409()
+            throws Exception {
+        ApplicationRecord saved = repository.saveAndFlush(
+                ApplicationRecord.builder()
+                        .userId("unhealthy-owner")
+                        .jobId("unhealthy-job")
+                        .canonicalJobId("unhealthy-job")
+                        .provenance(ApplicationProvenance.GENERATED)
+                        .jobTitle("Java Developer")
+                        .companyName("Example Ltd")
+                        .cvDocumentId(CV_ID.toString())
+                        .coverLetterDocumentId(
+                                COVER_LETTER_ID.toString())
+                        .status(ApplicationStatus.DOCUMENTS_GENERATED)
+                        .build());
+        reconciliationRepository.saveAndFlush(
+                ApplicationDocumentReconciliation.builder()
+                        .applicationId(saved.getId())
+                        .userId(saved.getUserId())
+                        .status(
+                                DocumentReferenceReconciliationStatus.INVALID)
+                        .issueCodes("CURRENT_CV_INVALID")
+                        .applicationRecordVersion(saved.getVersion())
+                        .build());
+
+        mockMvc.perform(patch(
+                                "/api/v1/applications/{id}/status",
+                                saved.getId())
+                        .header(
+                                HttpHeaders.AUTHORIZATION,
+                                authorization("unhealthy-owner"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                UpdateStatusRequest.builder()
+                                        .status("APPLIED")
+                                        .expectedVersion(saved.getVersion())
+                                        .build())))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status").value(409))
+                .andExpect(jsonPath("$.message").value(
+                        "Application document references are not currently verified. Retry after reconciliation."));
+
+        assertThat(repository.findById(saved.getId())
+                        .orElseThrow()
+                        .getStatus())
+                .isEqualTo(ApplicationStatus.DOCUMENTS_GENERATED);
     }
 
     @Test
@@ -1041,6 +1145,22 @@ class ApplicationRecordControllerIntegrationTest {
 
     private static String authorization(String subject) {
         return "Bearer " + JWKS.validToken(subject);
+    }
+
+    private void saveHealthyReconciliation(
+            ApplicationRecord application) {
+        LocalDateTime now = LocalDateTime.now();
+        reconciliationRepository.saveAndFlush(
+                ApplicationDocumentReconciliation.builder()
+                        .applicationId(application.getId())
+                        .userId(application.getUserId())
+                        .status(
+                                DocumentReferenceReconciliationStatus.HEALTHY)
+                        .checkedAt(now)
+                        .lastHealthyAt(now)
+                        .applicationRecordVersion(
+                                application.getVersion())
+                        .build());
     }
 
     private HttpHeaders producerHeaders(String ownerId) {

@@ -1,9 +1,10 @@
 # Recoverable application document workflows
 
 Application Tracker owns the durable outcome of cross-service application
-commands. APP-08 now delivers generated-only withdrawal and document
-replacement. Broader reconciliation of pre-existing application/document-link
-mismatches remains tracked by APP-08 and DOCGEN-17.
+commands. APP-08 now delivers generated-only withdrawal, document replacement
+and durable reconciliation of application/document-reference integrity.
+Recoverable generation orchestration and integrated E2E evidence remain
+tracked by APP-08 and DOCGEN-17.
 
 ## Generated withdrawal
 
@@ -143,3 +144,58 @@ covering a lost final response.
 
 Do not delete the source document during replacement recovery. Retention and
 historical-version policy remain separate work.
+
+## Application/document-reference reconciliation
+
+Flyway V10 creates one durable reconciliation record per application and
+backfills inherited applications as `PENDING`. A bounded oldest-first worker
+checks up to 50 records per pass. It validates every current CV and cover-letter
+reference and, after lifecycle progression, each immutable application-used
+reference through Document Store's owner/job/type/approval boundary.
+
+The worker follows deliberately narrow repair rules:
+
+- missing family, version or checksum metadata may be filled from the exact
+  approved owner-bound Store reference;
+- an existing non-null value is historical evidence and is never overwritten
+  when Store reports a conflicting value;
+- malformed, missing, ineligible or conflicting references are reported with
+  stable issue codes;
+- a Store outage is reported as `UNAVAILABLE` and remains eligible for a later
+  scheduled pass; and
+- a safe repair appends `DOCUMENT_REFERENCES_RECONCILED` as a system event.
+
+`GET /api/v1/applications/{id}/document-reference-reconciliation` exposes the
+owner-scoped state:
+
+| State | Meaning |
+| --- | --- |
+| `PENDING` | The application has not yet completed a current verification pass |
+| `HEALTHY` | All applicable references and immutable metadata agree with Store |
+| `REPAIRED` | Missing metadata was safely restored and all references now agree |
+| `INVALID` | At least one reference is malformed, ineligible, missing or conflicts with retained evidence |
+| `UNAVAILABLE` | Store could not complete verification; retry is expected |
+
+A generated application cannot progress beyond `DOCUMENTS_GENERATED` unless
+the durable state is `HEALTHY` or `REPAIRED`; this is returned as a stable
+`409` rather than allowing unverified evidence to become application-used
+history. New applications, approved manual reference changes and completed
+replacement workflows mark their exact verified state healthy in the same
+Tracker transaction.
+
+### Reconciliation recovery
+
+1. Read the owner-scoped status and record only the status, issue codes and
+   timestamps in operational evidence.
+2. For `UNAVAILABLE`, restore Document Store and allow the bounded worker to
+   retry; do not edit Tracker rows.
+3. For `INVALID`, compare the immutable Tracker and Store audit evidence. Do
+   not overwrite non-null historical metadata or create a substitute document
+   solely to clear the finding.
+4. Confirm `HEALTHY` or `REPAIRED` before replaying lifecycle progression.
+
+The schedule is controlled by
+`APPLICATION_DOCUMENT_RECONCILIATION_INITIAL_DELAY_MS` and
+`APPLICATION_DOCUMENT_RECONCILIATION_DELAY_MS`. Local verification uses
+deterministic Store responses and PostgreSQL Testcontainers; it calls no paid
+provider, AWS service or GitHub Actions workflow.
