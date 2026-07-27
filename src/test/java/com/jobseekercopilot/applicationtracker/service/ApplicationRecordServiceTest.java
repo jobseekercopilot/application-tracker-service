@@ -8,6 +8,7 @@ import com.jobseekercopilot.applicationtracker.dto.UpdateStatusRequest;
 import com.jobseekercopilot.applicationtracker.dto.UpdateDocumentReferenceRequest;
 import com.jobseekercopilot.applicationtracker.dto.WithdrawGeneratedApplicationResponse;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationRecord;
+import com.jobseekercopilot.applicationtracker.entity.ApplicationProvenance;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationStatus;
 import com.jobseekercopilot.applicationtracker.exception.InvalidStatusException;
 import com.jobseekercopilot.applicationtracker.exception.ResourceNotFoundException;
@@ -301,6 +302,42 @@ class ApplicationRecordServiceTest {
 
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.INTERVIEW);
         assertThat(response.getAppliedAt()).isEqualTo(appliedAt);
+    }
+
+    @Test
+    void updateStatus_ManualApplicationWithoutGeneratedDocuments_ShouldProgress() {
+        UUID id = UUID.randomUUID();
+        LocalDateTime appliedAt = LocalDateTime.now().minusDays(2);
+        ApplicationRecord record = ApplicationRecord.builder()
+                .id(id)
+                .userId("user-123")
+                .jobId("job-456")
+                .canonicalJobId("canonical-job-456")
+                .provider("FIXTURE")
+                .externalJobId("fixture-456")
+                .provenance(ApplicationProvenance.MANUAL)
+                .jobTitle("Java Developer")
+                .companyName("Example Ltd")
+                .status(ApplicationStatus.APPLIED)
+                .appliedAt(appliedAt)
+                .createdAt(LocalDateTime.now().minusDays(3))
+                .updatedAt(LocalDateTime.now().minusDays(1))
+                .build();
+
+        when(repository.findByIdAndUserId(id, "user-123"))
+                .thenReturn(Optional.of(record));
+        when(repository.saveAndFlush(any(ApplicationRecord.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        ApplicationRecordResponse response = service.updateStatus(
+                "user-123",
+                id,
+                UpdateStatusRequest.builder().status("INTERVIEW").build());
+
+        assertThat(response.getStatus()).isEqualTo(ApplicationStatus.INTERVIEW);
+        assertThat(response.getAppliedAt()).isEqualTo(appliedAt);
+        assertThat(response.getApplicationUsedCvDocumentReference()).isNull();
+        assertThat(response.getApplicationUsedCoverLetterDocumentReference()).isNull();
     }
 
     @Test
