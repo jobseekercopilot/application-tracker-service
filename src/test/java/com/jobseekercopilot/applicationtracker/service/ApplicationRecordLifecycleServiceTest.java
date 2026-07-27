@@ -38,6 +38,9 @@ class ApplicationRecordLifecycleServiceTest {
     @Mock
     private ApplicationEventRecorder eventRecorder;
 
+    @Mock
+    private ApplicationWithdrawalWorkflowService withdrawalWorkflowService;
+
     private ApplicationRecordService service;
 
     @BeforeEach
@@ -46,7 +49,8 @@ class ApplicationRecordLifecycleServiceTest {
                 repository,
                 documentReferenceVerifier,
                 applicationCreationService,
-                eventRecorder);
+                eventRecorder,
+                withdrawalWorkflowService);
     }
 
     @Test

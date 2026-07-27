@@ -54,10 +54,13 @@ verification before building the image. The Docker build compiles the test
 sources but does not execute the PostgreSQL Testcontainers suite because a
 standard image build must not receive the host Docker socket.
 
-The version `3.1.0` contract retains the owner-scoped public list and lifecycle
+The version `3.2.0` contract retains the owner-scoped public list and lifecycle
 concurrency contracts while replacing the unsafe raw-entity System Data routes
 with a constrained, versioned, owner-and-scenario-scoped fixture boundary and
-adds backward-compatible activity-history operations and timestamp fields. It
+adds backward-compatible activity-history and recoverable generated-withdrawal
+operations. A withdrawal now returns a durable operation ID and either a
+completed `200` or recovery-pending `202`; it never reports success after only
+part of document cleanup. It
 continues to publish the explicit response and stable authentication,
 authorization, conflict and owner-mismatch error schemas used by consumers.
 
@@ -83,6 +86,7 @@ versioned fixture schema, scenario isolation rules and operational runbook.
 | `APPLICATION_TRACKER_PRODUCER_TOKEN` | Create/read/document-link service identity |
 | `APPLICATION_TRACKER_READER_TOKEN` | Read-only service identity |
 | `ENVIRONMENT_DATA_TOKEN` | Independent non-production fixture identity |
+| `DOCUMENT_STORE_PRODUCER_TOKEN` | Tracker-owned document-workflow command identity |
 | `APPLICATION_TRACKER_DATABASE_URL` | PostgreSQL JDBC target |
 | `APPLICATION_TRACKER_DATABASE_USERNAME` | Dedicated database role |
 | `APPLICATION_TRACKER_DATABASE_PASSWORD` | Runtime-injected database secret |

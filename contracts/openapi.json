@@ -9,7 +9,7 @@
     "license" : {
       "name" : "Proprietary and confidential"
     },
-    "version" : "3.1.0"
+    "version" : "3.2.0"
   },
   "servers" : [ {
     "url" : "http://localhost:8088",
@@ -137,10 +137,49 @@
       }
     },
     "/api/v1/applications/{id}/withdraw-generated" : {
+      "get" : {
+        "tags" : [ "Application Records" ],
+        "summary" : "Get generated-application withdrawal recovery status",
+        "operationId" : "generatedWithdrawalStatus",
+        "parameters" : [ {
+          "name" : "id",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        } ],
+        "responses" : {
+          "404" : {
+            "description" : "Withdrawal operation not found",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/WithdrawGeneratedApplicationResponse"
+                }
+              }
+            }
+          },
+          "200" : {
+            "description" : "Durable withdrawal state",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/WithdrawGeneratedApplicationResponse"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      },
       "post" : {
         "tags" : [ "Application Records" ],
         "summary" : "Withdraw generated application",
-        "description" : "Removes a generated-only application record and resets the job to NEW",
+        "description" : "Starts or resumes durable generated-document cleanup; the application is removed only after cleanup completes",
         "operationId" : "withdrawGeneratedApplication",
         "parameters" : [ {
           "name" : "id",
@@ -153,6 +192,16 @@
           }
         } ],
         "responses" : {
+          "202" : {
+            "description" : "Withdrawal accepted and awaiting recoverable document cleanup",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/WithdrawGeneratedApplicationResponse"
+                }
+              }
+            }
+          },
           "400" : {
             "description" : "Application cannot be withdrawn because it has already progressed",
             "content" : {
@@ -225,16 +274,6 @@
               }
             }
           },
-          "404" : {
-            "description" : "Application record not found",
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
           "400" : {
             "description" : "Invalid status value",
             "content" : {
@@ -247,6 +286,16 @@
           },
           "409" : {
             "description" : "Invalid lifecycle transition or stale/concurrent record version",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404" : {
+            "description" : "Application record not found",
             "content" : {
               "application/json" : {
                 "schema" : {
@@ -584,6 +633,26 @@
           }
         } ],
         "responses" : {
+          "404" : {
+            "description" : "Bearer subject and requested owner do not match",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401" : {
+            "description" : "Missing, invalid or ambiguous authentication",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SecurityErrorResponse"
+                }
+              }
+            }
+          },
           "403" : {
             "description" : "Authenticated identity lacks reader permission",
             "content" : {
@@ -603,26 +672,6 @@
                   "items" : {
                     "$ref" : "#/components/schemas/ApplicationRecordResponse"
                   }
-                }
-              }
-            }
-          },
-          "401" : {
-            "description" : "Missing, invalid or ambiguous authentication",
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/SecurityErrorResponse"
-                }
-              }
-            }
-          },
-          "404" : {
-            "description" : "Bearer subject and requested owner do not match",
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1094,6 +1143,29 @@
             "type" : "boolean",
             "description" : "Whether the generated application was withdrawn",
             "example" : true
+          },
+          "operationId" : {
+            "type" : "string",
+            "description" : "Durable workflow operation ID",
+            "format" : "uuid"
+          },
+          "operationStatus" : {
+            "type" : "string",
+            "description" : "Durable workflow state",
+            "enum" : [ "PENDING", "RUNNING", "RECOVERY_REQUIRED", "COMPLETED" ]
+          },
+          "retryable" : {
+            "type" : "boolean",
+            "description" : "Whether the incomplete workflow can be retried automatically"
+          },
+          "recoveryCode" : {
+            "type" : "string",
+            "description" : "Stable non-sensitive recovery reason when work is incomplete"
+          },
+          "completedAt" : {
+            "type" : "string",
+            "description" : "UTC completion time when document cleanup and withdrawal committed",
+            "format" : "date-time"
           },
           "message" : {
             "type" : "string",

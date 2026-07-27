@@ -287,10 +287,13 @@ public class ApplicationRecordController {
     }
 
     @PostMapping("/{id}/withdraw-generated")
-    @Operation(summary = "Withdraw generated application", description = "Removes a generated-only application record and resets the job to NEW")
+    @Operation(
+            summary = "Withdraw generated application",
+            description = "Starts or resumes durable generated-document cleanup; the application is removed only after cleanup completes")
     @SecurityRequirement(name = "bearerAuth")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Generated application withdrawn"),
+            @ApiResponse(responseCode = "202", description = "Withdrawal accepted and awaiting recoverable document cleanup"),
             @ApiResponse(responseCode = "400", description = "Application cannot be withdrawn because it has already progressed"),
             @ApiResponse(responseCode = "404", description = "Application record not found")
     })
@@ -301,12 +304,32 @@ public class ApplicationRecordController {
             String authorization,
             @Parameter(hidden = true) Authentication authentication) {
         String ownerId = ownerResolver.resolve(authentication, null);
-        return ResponseEntity.ok(
+        WithdrawGeneratedApplicationResponse response =
                 service.withdrawGeneratedApplication(
                         ownerId,
                         id,
                         authorization,
-                        actorResolver.resolve(authentication)));
+                        actorResolver.resolve(authentication));
+        return response.isWithdrawn()
+                ? ResponseEntity.ok(response)
+                : ResponseEntity.accepted().body(response);
+    }
+
+    @GetMapping("/{id}/withdraw-generated")
+    @Operation(summary = "Get generated-application withdrawal recovery status")
+    @SecurityRequirement(name = "bearerAuth")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Durable withdrawal state"),
+            @ApiResponse(responseCode = "404", description = "Withdrawal operation not found")
+    })
+    public ResponseEntity<WithdrawGeneratedApplicationResponse>
+            generatedWithdrawalStatus(
+                    @PathVariable UUID id,
+                    @Parameter(hidden = true)
+                    Authentication authentication) {
+        String ownerId = ownerResolver.resolve(authentication, null);
+        return ResponseEntity.ok(
+                service.generatedWithdrawalStatus(ownerId, id));
     }
 
     @DeleteMapping("/{id}")

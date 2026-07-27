@@ -21,9 +21,11 @@ import com.jobseekercopilot.applicationtracker.dto.UpdateStatusRequest;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationRecord;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationStatus;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationRecordRepository;
+import com.jobseekercopilot.applicationtracker.repository.ApplicationDocumentWorkflowRepository;
 import com.jobseekercopilot.applicationtracker.security.ApplicationOwnerResolver;
 import com.jobseekercopilot.applicationtracker.security.ApplicationServiceIdentityFilter;
 import com.jobseekercopilot.applicationtracker.service.DocumentReferenceVerifier;
+import com.jobseekercopilot.applicationtracker.service.DocumentStoreWorkflowClient;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
@@ -90,11 +92,18 @@ class ApplicationSecurityIntegrationTest {
     @Autowired
     private ApplicationRecordRepository repository;
 
+    @Autowired
+    private ApplicationDocumentWorkflowRepository workflowRepository;
+
     @MockBean
     private DocumentReferenceVerifier documentReferenceVerifier;
 
+    @MockBean
+    private DocumentStoreWorkflowClient documentStoreWorkflowClient;
+
     @BeforeEach
     void cleanDatabase() {
+        workflowRepository.deleteAll();
         repository.deleteAll();
         when(documentReferenceVerifier.verify(
                         anyString(),

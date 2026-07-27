@@ -46,6 +46,9 @@ class ApplicationRecordServiceTest {
     @Mock
     private ApplicationEventRecorder eventRecorder;
 
+    @Mock
+    private ApplicationWithdrawalWorkflowService withdrawalWorkflowService;
+
     private ApplicationRecordService service;
 
     private static final UUID CV_ID =
@@ -59,7 +62,8 @@ class ApplicationRecordServiceTest {
                 repository,
                 documentReferenceVerifier,
                 applicationCreationService,
-                eventRecorder);
+                eventRecorder,
+                withdrawalWorkflowService);
     }
 
     @Test
@@ -417,49 +421,41 @@ class ApplicationRecordServiceTest {
     }
 
     @Test
-    void withdrawGeneratedApplication_WhenDocumentsGenerated_ShouldDeleteAndReturnNew() {
+    void withdrawGeneratedApplication_ShouldDelegateToDurableWorkflow() {
         UUID id = UUID.randomUUID();
-        ApplicationRecord record = ApplicationRecord.builder()
-                .id(id)
-                .userId("user-123")
-                .jobId("job-456")
-                .jobTitle("Java Developer")
-                .companyName("Example Ltd")
-                .cvDocumentId("cv-123")
-                .coverLetterDocumentId("cl-456")
-                .status(ApplicationStatus.DOCUMENTS_GENERATED)
-                .build();
-
-        when(repository.findForUpdateByIdAndUserId(id, "user-123"))
-                .thenReturn(Optional.of(record));
+        WithdrawGeneratedApplicationResponse expected =
+                WithdrawGeneratedApplicationResponse.builder()
+                        .applicationId(id)
+                        .status("NEW")
+                        .withdrawn(true)
+                        .build();
+        when(withdrawalWorkflowService.withdraw(
+                        anyString(),
+                        any(UUID.class),
+                        any(ApplicationCommandActor.class)))
+                .thenReturn(expected);
 
         WithdrawGeneratedApplicationResponse response =
                 service.withdrawGeneratedApplication("user-123", id, null);
 
-        assertThat(response.getApplicationId()).isEqualTo(id);
-        assertThat(response.getStatus()).isEqualTo("NEW");
-        assertThat(response.isWithdrawn()).isTrue();
-        verify(repository).delete(record);
+        assertThat(response).isSameAs(expected);
+        verify(withdrawalWorkflowService).withdraw(
+                "user-123", id, ApplicationCommandActor.user("user-123"));
     }
 
     @Test
-    void withdrawGeneratedApplication_WhenAlreadyApplied_ShouldRejectAndPreserveRecord() {
+    void generatedWithdrawalStatus_ShouldDelegateToDurableWorkflow() {
         UUID id = UUID.randomUUID();
-        ApplicationRecord record = ApplicationRecord.builder()
-                .id(id)
-                .userId("user-123")
-                .jobId("job-456")
-                .status(ApplicationStatus.APPLIED)
-                .build();
+        WithdrawGeneratedApplicationResponse expected =
+                WithdrawGeneratedApplicationResponse.builder()
+                        .applicationId(id)
+                        .operationStatus("RECOVERY_REQUIRED")
+                        .build();
+        when(withdrawalWorkflowService.status("user-123", id))
+                .thenReturn(expected);
 
-        when(repository.findForUpdateByIdAndUserId(id, "user-123"))
-                .thenReturn(Optional.of(record));
-
-        assertThatThrownBy(() ->
-                service.withdrawGeneratedApplication("user-123", id, null))
-                .isInstanceOf(InvalidStatusException.class)
-                .hasMessageContaining("only be withdrawn before applying");
-        verify(repository, never()).delete(record);
+        assertThat(service.generatedWithdrawalStatus("user-123", id))
+                .isSameAs(expected);
     }
 
     private DocumentVersionReference reference(UUID id, DocumentType type) {

@@ -115,6 +115,8 @@ public class ApplicationRecord {
 
     private LocalDateTime appliedAt;
 
+    private UUID activeDocumentWorkflowId;
+
     @Version
     @Column(name = "record_version", nullable = false)
     private long version;

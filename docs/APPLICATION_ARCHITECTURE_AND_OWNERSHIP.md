@@ -64,15 +64,14 @@ flowchart LR
     Client --> JobFinder
     Auth -. access token and JWKS .-> Client
     Auth -. JWKS verification .-> Tracker
-    JobFinder -->|list, status, withdraw| Tracker
-    JobFinder -->|current best-effort withdraw cleanup| Store
+    JobFinder -->|list, status, withdraw proxy| Tracker
     JobService -. canonical job source .-> DocGen
     DocGen --> CvService
     CvService -->|current automatic create| Tracker
     CvService --> Store
     DocGen -->|read and replace reference| Tracker
     DocGen -->|current active-document update| Store
-    Tracker -->|validate approved owner-bound reference| Store
+    Tracker -->|validate references and coordinate atomic withdrawal cleanup| Store
     Tracker --> Database
     Matching -->|reader list| Tracker
     ReportingGateway --> Reporting
@@ -87,7 +86,7 @@ flowchart LR
 | Application Tracker | `ApplicationRecordController`, `ApplicationRecordService`, `ApplicationRecord`, `ApplicationSecurityConfig` | Owns the row, owner-scoped queries, lifecycle transition, record version and current/frozen document references. |
 | CV and Cover Letter Service | `CvCoverLetterService.generate` and `createApplication` | Saves two documents and currently creates a `DOCUMENTS_GENERATED` application before billing commit. CVCL-01 owns removal of that coupling. |
 | Document Generation Gateway | `DocumentGenerationService.fetchApplication`, `validateApplicationAllowsDocumentReplacement` and replacement flow | Reads application state and currently updates Document Store before updating the application reference. APP-08 and DOCGEN-17 own the recoverable target. |
-| Job Finder Gateway | `JobSearchController` application list/status/withdraw endpoints | Delegates the user Bearer token and validates returned ownership. It currently deletes documents after Tracker has deleted a generated record. |
+| Job Finder Gateway | `JobSearchController` application list/status/withdraw endpoints | Delegates the user Bearer token, validates returned resource identity and preserves Tracker's completed or recovery-pending withdrawal response. It performs no document cleanup. |
 | Job Matching Service | `ApplicationTrackerClient` and `JobMatchingService` | Reads owner-scoped application rows and derives ephemeral job-card enrichment. |
 | Reporting Service | `ReportingService.applicationsFor`, `applicationSummary` and `timeline` | Reads owner-scoped rows and currently infers one activity from each mutable row. REPORT-04/06 own historical reporting delivery. |
 | Angular client and Express BFF | `application-tracker.service.ts` and `server.ts` | Calls Job Finder routes; the compatibility `/api/v1/applications` BFF route still proxies Job Finder rather than Tracker directly. The client currently synthesizes timeline events. |
@@ -155,14 +154,15 @@ credential values in contracts, logs or repositories.
 | Create application | Tracker idempotency key plus application transaction | Reference validation failure creates no row. A database failure creates no row. A lost success response is safely replayed. | APP-05, DOCGEN-17 |
 | Replace selected document | Tracker reference command and outbox/workflow state | Store unavailability rejects before commit; projection/retention failure remains visible and retryable after commit. The caller never reports full success after only one side changed. | APP-08, DOCGEN-17 |
 | Change lifecycle state | Tracker database transaction | Invalid/stale/concurrent commands return stable `409`; successful state, frozen references and event are atomic. | APP-06, APP-07 |
-| Withdraw generated-only application | Tracker durable workflow/tombstone | Document cleanup is idempotent and retryable. The response distinguishes accepted/pending from fully completed cleanup. | APP-08, APP-09 |
+| Withdraw generated-only application | Tracker `application_document_workflows` row plus Store application-workflow command | Delivered: cleanup is atomic, idempotent and retryable; the application remains visible until completion; the response distinguishes accepted/pending from completed cleanup. APP-08 remains open for replacement and reconciliation. | APP-08, APP-09 |
 | Archive/delete submitted application | Tracker retention decision plus Store retention outcome | Legal/product retention rules can refuse or defer physical deletion; audit history and dependency state remain reconcilable. | APP-09 |
 | Match job results | No durable write; derived response | Tracker timeout/unavailability returns explicit degradation. Ambiguous title/company/location similarity cannot assert an application match. | MATCH-03/04/05/07/08 |
 | Produce report or timeline | No application write; derived response | Missing current/event sources produce an unavailable or explicitly partial report, never invented activity. | REPORT-03/04/06 |
 | Seed/reset E2E scenario | Per-service idempotent fixture operation | System Data fails the named-state workflow visibly and can retry/reset the same owner/scenario boundary. No production data path is opened. | APP-11, E2E |
 
-APP-08 chooses and implements the concrete outbox/workflow mechanism. The
-decision here is limited to ownership and failure semantics.
+APP-08 implements the concrete workflow mechanism incrementally. Generated
+withdrawal now uses a durable Tracker workflow and an atomic Store command.
+Replacement and application/document-link reconciliation remain unfinished.
 
 ## Contract and test boundaries
 
@@ -184,7 +184,7 @@ decision here is limited to ownership and failure semantics.
 | APP-04 | PostgreSQL is the application system of record. | Managed deployment, encryption, backup and restore evidence. |
 | APP-05 | Creation is explicit, generation-independent and idempotent. | Request identity, uniqueness, manual/external capture and implementation. |
 | APP-06 / APP-07 | Tracker owns lifecycle and append-only history. | Existing transition rollout plus event schema/storage/reopen rules. |
-| APP-08 / APP-09 | Tracker owns durable workflow/application retention; Store owns content retention. | Outbox/recovery/reconciliation and approved archive/delete policy. |
+| APP-08 / APP-09 | Tracker owns durable workflow/application retention; Store owns content retention. | Generated withdrawal recovery is delivered; replacement, link reconciliation and approved archive/delete policy remain. |
 | APP-10 / APP-14 / APP-17 | Tracker owns scalable owner queries and final evidence. | Pagination/indexing, test consolidation and private-beta validation. |
 | APP-15 and E2E | Client displays Tracker facts and uses Job Finder as the user command boundary. | Accessible UX and deterministic browser evidence. |
 | CVCL-01 / CVCL-02 | Generation no longer implies application creation. | Draft/approval/billing recovery and contract rollout. |
@@ -200,9 +200,10 @@ decision they consume.
 
 - Application Tracker becomes a clear domain service rather than a passive row
   store behind edge orchestration.
-- Existing automatic creation, dual writes, best-effort cleanup, fuzzy matching
-  and synthesized timelines are explicitly transitional and cannot be treated
-  as beta-ready evidence.
+- Existing automatic creation, replacement dual writes, fuzzy matching and
+  synthesized timelines are explicitly transitional and cannot be treated as
+  beta-ready evidence. Generated withdrawal no longer relies on edge-only
+  best-effort cleanup.
 - Cross-service operations may be eventually completed, but their accepted,
   pending, failed and reconciled states must be durable and truthful.
 - No AWS resource, paid provider, live LLM, Stripe call or deployment is

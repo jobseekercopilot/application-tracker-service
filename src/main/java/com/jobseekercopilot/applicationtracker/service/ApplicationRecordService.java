@@ -53,6 +53,7 @@ public class ApplicationRecordService {
     private final DocumentReferenceVerifier documentReferenceVerifier;
     private final ApplicationCreationService applicationCreationService;
     private final ApplicationEventRecorder eventRecorder;
+    private final ApplicationWithdrawalWorkflowService withdrawalWorkflowService;
 
     public ApplicationRecordResponse createApplication(
             String ownerId,
@@ -139,6 +140,7 @@ public class ApplicationRecordService {
             ApplicationCommandActor actor) {
         long startedAt = System.nanoTime();
         ApplicationRecord record = findOwnedApplication(ownerId, id);
+        requireNoActiveDocumentWorkflow(record);
 
         ApplicationStatus previousStatus = record.getStatus();
         ApplicationStatus newStatus = parseSupportedStatus(request.getStatus());
@@ -194,6 +196,7 @@ public class ApplicationRecordService {
             UpdateDocumentReferenceRequest request,
             ApplicationCommandActor actor) {
         ApplicationRecord record = findOwnedApplicationForUpdate(ownerId, id);
+        requireNoActiveDocumentWorkflow(record);
         if (record.getStatus() != ApplicationStatus.DOCUMENTS_GENERATED
                 || record.getApplicationUsedCvDocumentId() != null) {
             throw new InvalidStatusException("Documents cannot be replaced after the application has been marked as applied.");
@@ -242,6 +245,7 @@ public class ApplicationRecordService {
     public void deleteApplication(
             String ownerId, UUID id, ApplicationCommandActor actor) {
         ApplicationRecord record = findOwnedApplicationForUpdate(ownerId, id);
+        requireNoActiveDocumentWorkflow(record);
         if (record.getApplicationUsedCvDocumentId() != null) {
             throw new InvalidStatusException(
                     "Submitted applications require retention-aware deletion.");
@@ -250,7 +254,6 @@ public class ApplicationRecordService {
         repository.delete(record);
     }
 
-    @Transactional
     public WithdrawGeneratedApplicationResponse withdrawGeneratedApplication(
             String ownerId,
             UUID id,
@@ -262,31 +265,17 @@ public class ApplicationRecordService {
                 ApplicationCommandActor.user(ownerId));
     }
 
-    @Transactional
     public WithdrawGeneratedApplicationResponse withdrawGeneratedApplication(
             String ownerId,
             UUID id,
             String authorization,
             ApplicationCommandActor actor) {
-        long startedAt = System.nanoTime();
-        ApplicationRecord record = findOwnedApplicationForUpdate(ownerId, id);
+        return withdrawalWorkflowService.withdraw(ownerId, id, actor);
+    }
 
-        if (record.getStatus() != ApplicationStatus.DOCUMENTS_GENERATED) {
-            log.warn("Invalid owner-scoped generated application withdraw status={}",
-                    record.getStatus());
-            throw new InvalidStatusException("Generated application can only be withdrawn before applying");
-        }
-
-        eventRecorder.recordGeneratedWithdrawal(record, Instant.now(), actor);
-        repository.delete(record);
-        log.info("Owner-scoped generated application withdrawn durationMs={}",
-                (System.nanoTime() - startedAt) / 1_000_000);
-        return WithdrawGeneratedApplicationResponse.builder()
-                .applicationId(id)
-                .status("NEW")
-                .withdrawn(true)
-                .message("Generated application withdrawn and reset to new.")
-                .build();
+    public WithdrawGeneratedApplicationResponse generatedWithdrawalStatus(
+            String ownerId, UUID id) {
+        return withdrawalWorkflowService.status(ownerId, id);
     }
 
     private ApplicationRecordResponse mapToResponse(ApplicationRecord record) {
@@ -457,6 +446,13 @@ public class ApplicationRecordService {
             String ownerId, UUID id) {
         return repository.findForUpdateByIdAndUserId(id, ownerId)
                 .orElseThrow(ResourceNotFoundException::applicationNotFound);
+    }
+
+    private void requireNoActiveDocumentWorkflow(ApplicationRecord record) {
+        if (record.getActiveDocumentWorkflowId() != null) {
+            throw new InvalidStatusException(
+                    "Application has a document workflow in progress");
+        }
     }
 
     private ApplicationStatus parseSupportedStatus(String status) {

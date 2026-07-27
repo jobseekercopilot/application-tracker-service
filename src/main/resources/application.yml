@@ -49,6 +49,9 @@ management:
         include: health
 
 application-tracker:
+  workflows:
+    recovery-initial-delay-ms: ${APPLICATION_WORKFLOW_RECOVERY_INITIAL_DELAY_MS:30000}
+    recovery-delay-ms: ${APPLICATION_WORKFLOW_RECOVERY_DELAY_MS:30000}
   database:
     production-safety-check: ${APPLICATION_TRACKER_DATABASE_PRODUCTION_SAFETY_CHECK:true}
     encryption-at-rest-enabled: ${APPLICATION_TRACKER_DATABASE_ENCRYPTION_AT_REST_ENABLED:false}
@@ -68,3 +71,4 @@ services:
   document-store-service:
     base-url: ${DOCUMENT_STORE_SERVICE_URL:http://document-store-service:8089}
     reader-token: ${DOCUMENT_STORE_READER_TOKEN:}
+    producer-token: ${DOCUMENT_STORE_PRODUCER_TOKEN:}

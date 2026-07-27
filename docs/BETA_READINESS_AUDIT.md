@@ -109,14 +109,14 @@ duplicate owner/canonical-job records. CV generation still automatically calls
 this contract, and the client does not yet expose a manual/external creation
 journey. CVCL-01, DOCGEN-17 and the client issue retain those rollout scopes.
 
-### Cross-service consistency is not atomic
+### Cross-service consistency is only partially recoverable
 
-CV generation saves two documents and then creates an application before billing
-completion. Replacement activates a Document Store version before updating the
-tracker. Generated withdrawal swallows tracker-side document deactivation errors,
-deletes the application, and is followed by a second best-effort hard delete in
-Job Finder Gateway. Failures can leave orphaned documents, missing references or
-an application state that cannot be reconciled.
+CV generation still saves two documents and creates an application before
+billing completion. Replacement still activates a Document Store version before
+updating Tracker. Generated withdrawal is now a durable Tracker-owned workflow:
+Store cleanup is atomic and replay-safe, the application remains visible during
+recovery, and Job Finder no longer performs duplicate cleanup. APP-08 remains
+open for replacement and application/document-link reconciliation.
 
 ### Unsafe user deletion; System Data boundary implemented, rollout incomplete
 
@@ -125,7 +125,7 @@ an archive, retention or dependent-document policy. APP-11 removes raw entity
 fixture writes and owner-wide reset/verification, rejects default/unknown/mixed
 profiles and retains the independent APP-03 identity. The producer is intentionally
 incompatible with the old System Data caller; that consumer and the E2E
-Infrastructure profile must adopt the current `3.1.0` contract before this
+Infrastructure profile must adopt the current `3.2.0` contract before this
 blocker can close.
 
 ### Query, privacy and operational limits

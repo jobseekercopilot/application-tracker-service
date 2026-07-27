@@ -13,6 +13,8 @@ import com.jobseekercopilot.applicationtracker.exception.DocumentReferenceUnavai
 import com.jobseekercopilot.applicationtracker.exception.InvalidDocumentReferenceException;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationRecordRepository;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationEventRepository;
+import com.jobseekercopilot.applicationtracker.repository.ApplicationDocumentWorkflowRepository;
+import com.jobseekercopilot.applicationtracker.service.DocumentStoreWorkflowClient;
 import com.jobseekercopilot.applicationtracker.service.DocumentReferenceVerifier;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -42,6 +44,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @SpringBootTest
@@ -78,11 +85,18 @@ class ApplicationRecordControllerIntegrationTest {
     @Autowired
     private ApplicationEventRepository eventRepository;
 
+    @Autowired
+    private ApplicationDocumentWorkflowRepository workflowRepository;
+
     @MockBean
     private DocumentReferenceVerifier documentReferenceVerifier;
 
+    @MockBean
+    private DocumentStoreWorkflowClient documentStoreWorkflowClient;
+
     @BeforeEach
     void setUp() {
+        workflowRepository.deleteAll();
         repository.deleteAll();
         when(documentReferenceVerifier.verify(
                         anyString(),
@@ -704,8 +718,8 @@ class ApplicationRecordControllerIntegrationTest {
                 .jobId("job-456")
                 .jobTitle("Java Developer")
                 .companyName("Example Ltd")
-                .cvDocumentId("cv-123")
-                .coverLetterDocumentId("cl-456")
+                .cvDocumentId(CV_ID.toString())
+                .coverLetterDocumentId(COVER_LETTER_ID.toString())
                 .status(ApplicationStatus.DOCUMENTS_GENERATED)
                 .build());
 
@@ -744,8 +758,8 @@ class ApplicationRecordControllerIntegrationTest {
                 .jobId("job-456")
                 .jobTitle("Java Developer")
                 .companyName("Example Ltd")
-                .cvDocumentId("cv-123")
-                .coverLetterDocumentId("cl-456")
+                .cvDocumentId(CV_ID.toString())
+                .coverLetterDocumentId(COVER_LETTER_ID.toString())
                 .status(ApplicationStatus.DOCUMENTS_GENERATED)
                 .build());
 
@@ -754,11 +768,103 @@ class ApplicationRecordControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.applicationId").value(saved.getId().toString()))
                 .andExpect(jsonPath("$.status").value("NEW"))
-                .andExpect(jsonPath("$.withdrawn").value(true));
+                .andExpect(jsonPath("$.withdrawn").value(true))
+                .andExpect(jsonPath("$.operationId").isNotEmpty())
+                .andExpect(jsonPath("$.operationStatus").value("COMPLETED"))
+                .andExpect(jsonPath("$.retryable").value(false));
 
         mockMvc.perform(get("/api/v1/applications/{id}", saved.getId())
                         .header(HttpHeaders.AUTHORIZATION, authorization("user-123")))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void withdrawGeneratedApplication_WhenStoreFails_ShouldRemainVisibleAndResumeSameOperation()
+            throws Exception {
+        ApplicationRecord saved = repository.save(ApplicationRecord.builder()
+                .userId("recovery-owner")
+                .jobId("job-recovery")
+                .jobTitle("Recovery Engineer")
+                .companyName("Example Ltd")
+                .cvDocumentId(CV_ID.toString())
+                .coverLetterDocumentId(COVER_LETTER_ID.toString())
+                .status(ApplicationStatus.DOCUMENTS_GENERATED)
+                .build());
+        doThrow(new com.jobseekercopilot.applicationtracker.service
+                        .DocumentStoreWorkflowException(
+                                "DOCUMENT_STORE_UNAVAILABLE", true, null))
+                .doNothing()
+                .when(documentStoreWorkflowClient)
+                .softDeleteGeneratedDocuments(
+                        anyString(),
+                        any(UUID.class),
+                        any(UUID.class),
+                        anyList());
+
+        String pendingBody = mockMvc.perform(
+                        post("/api/v1/applications/{id}/withdraw-generated",
+                                saved.getId())
+                                .header(
+                                        HttpHeaders.AUTHORIZATION,
+                                        authorization("recovery-owner")))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.withdrawn").value(false))
+                .andExpect(jsonPath("$.status")
+                        .value("DOCUMENTS_GENERATED"))
+                .andExpect(jsonPath("$.operationStatus")
+                        .value("RECOVERY_REQUIRED"))
+                .andExpect(jsonPath("$.recoveryCode")
+                        .value("DOCUMENT_STORE_UNAVAILABLE"))
+                .andExpect(jsonPath("$.retryable").value(true))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String operationId =
+                objectMapper.readTree(pendingBody).path("operationId").asText();
+
+        mockMvc.perform(get("/api/v1/applications/{id}", saved.getId())
+                        .header(
+                                HttpHeaders.AUTHORIZATION,
+                                authorization("recovery-owner")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status")
+                        .value("DOCUMENTS_GENERATED"));
+        mockMvc.perform(patch("/api/v1/applications/{id}/status", saved.getId())
+                        .header(
+                                HttpHeaders.AUTHORIZATION,
+                                authorization("recovery-owner"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                UpdateStatusRequest.builder()
+                                        .status("APPLIED")
+                                        .build())))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(post("/api/v1/applications/{id}/withdraw-generated",
+                                saved.getId())
+                        .header(
+                                HttpHeaders.AUTHORIZATION,
+                                authorization("recovery-owner")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.operationId").value(operationId))
+                .andExpect(jsonPath("$.operationStatus").value("COMPLETED"))
+                .andExpect(jsonPath("$.withdrawn").value(true));
+        mockMvc.perform(get("/api/v1/applications/{id}/withdraw-generated",
+                                saved.getId())
+                        .header(
+                                HttpHeaders.AUTHORIZATION,
+                                authorization("recovery-owner")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.operationId").value(operationId))
+                .andExpect(jsonPath("$.operationStatus").value("COMPLETED"));
+
+        assertThat(repository.findById(saved.getId())).isEmpty();
+        verify(documentStoreWorkflowClient, times(2))
+                .softDeleteGeneratedDocuments(
+                        anyString(),
+                        any(UUID.class),
+                        any(UUID.class),
+                        anyList());
     }
 
     @Test

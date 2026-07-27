@@ -57,7 +57,7 @@ public class OpenApiConfig {
                                 - REJECTED_BY_USER - Offer or opportunity rejected by the user
                                 - WITHDRAWN - User withdrew their application
                                 """)
-                        .version("3.1.0")
+                        .version("3.2.0")
                         .contact(new Contact()
                                 .name("Jobseeker Copilot"))
                         .license(new License()
