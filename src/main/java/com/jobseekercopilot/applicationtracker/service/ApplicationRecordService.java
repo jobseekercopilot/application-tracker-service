@@ -8,6 +8,7 @@ import com.jobseekercopilot.applicationtracker.dto.UpdateStatusRequest;
 import com.jobseekercopilot.applicationtracker.dto.UpdateDocumentReferenceRequest;
 import com.jobseekercopilot.applicationtracker.dto.WithdrawGeneratedApplicationResponse;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationLifecycle;
+import com.jobseekercopilot.applicationtracker.entity.ApplicationProvenance;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationRecord;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationStatus;
 import com.jobseekercopilot.applicationtracker.exception.ApplicationVersionConflictException;
@@ -159,7 +160,8 @@ public class ApplicationRecordService {
         }
         Instant occurredAt = resolveOccurredAt(record, request.getOccurredAt());
         if (newStatus != ApplicationStatus.DOCUMENTS_GENERATED
-                && record.getApplicationUsedCvDocumentId() == null) {
+                && record.getApplicationUsedCvDocumentId() == null
+                && requiresFrozenDocumentReferences(record)) {
             freezeApplicationUsedReferences(
                     record, LocalDateTime.ofInstant(occurredAt, ZoneOffset.UTC));
         }
@@ -334,6 +336,11 @@ public class ApplicationRecordService {
         record.setApplicationUsedCoverLetterDocumentContentSha256(
                 coverLetter.getContentSha256());
         record.setApplicationUsedAt(occurredAt);
+    }
+
+    private boolean requiresFrozenDocumentReferences(ApplicationRecord record) {
+        return record.getProvenance() == null
+                || record.getProvenance() == ApplicationProvenance.GENERATED;
     }
 
     private Instant resolveOccurredAt(
