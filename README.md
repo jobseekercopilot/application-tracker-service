@@ -9,6 +9,9 @@ tracking system. See [`docs/BETA_READINESS_AUDIT.md`](docs/BETA_READINESS_AUDIT.
 Its ownership boundary with Job Search and Job Matching is defined in the
 Infrastructure
 [Job Search architecture ADR](https://github.com/jobseekercopilot/infrastructure/blob/develop/docs/adr/0001-job-search-architecture-and-ownership.md).
+The approved application-domain ownership, trust, command/query, failure and
+test boundaries are defined in
+[`docs/APPLICATION_ARCHITECTURE_AND_OWNERSHIP.md`](docs/APPLICATION_ARCHITECTURE_AND_OWNERSHIP.md).
 
 ## Build
 

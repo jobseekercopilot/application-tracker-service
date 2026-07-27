@@ -40,10 +40,16 @@ enablement or represent a durable, access-controlled source of truth.
   E2E runtime can use its independent identity; seed uses constrained DTOs; and
   deterministic seed, reset and verification are owner-and-scenario scoped.
   System Data and Infrastructure rollout remain required before integrated use.
+- APP-01 approves the source-backed application-domain architecture:
+  Application Tracker owns application identity, owner binding, current
+  lifecycle, append-only history and application-used document references;
+  Authentication, Job Service and Document Store retain authority for their
+  own domains. It assigns trust, command/query, failure and test boundaries
+  without implementing the linked delivery issues.
 
 ## Critical findings
 
-### Ownership enforcement implemented; consumer rollout incomplete
+### Ownership architecture approved and enforcement implemented; delivery incomplete
 
 APP-03 closes the source-of-truth service boundary: user ownership comes only
 from a validated access-token subject, every record and document lookup includes
@@ -52,6 +58,13 @@ credentials, and System Data has an independent credential. The service remains
 a beta blocker until Job Finder, CV/cover-letter, document generation, Job
 Matching, Reporting and Infrastructure adopt those credentials and owner
 semantics and the integrated journeys pass.
+
+APP-01 records the approved cross-service boundary in
+`APPLICATION_ARCHITECTURE_AND_OWNERSHIP.md`. In particular, generation does
+not imply application creation, edge gateways cannot own durable cleanup, and
+Reporting/Matching consume derived read models rather than inventing
+application facts. APP-05, APP-07, APP-08, APP-09 and their consumer issues
+still implement those decisions.
 
 ### Durable repository storage implemented; deployed recovery evidence incomplete
 
@@ -138,6 +151,8 @@ failure, allowing false-positive tracking journeys.
 | Durable storage/migrations | Repository implementation complete; AWS deployment/restore evidence pending |
 | Observability/operations | Basic request logs and health only |
 
-The Application Tracking epic contains focused follow-up issues. APP-02 is the
-first implementation slice; all other findings remain separately tracked and
-this document is still not a beta-readiness approval.
+The Application Tracking epic contains focused follow-up issues. APP-01
+supplies their shared architecture decision; APP-02 through APP-11 already
+contain completed repository slices and explicit remaining dependencies. All
+other findings remain separately tracked and this document is still not a
+beta-readiness approval.
