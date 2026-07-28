@@ -49,6 +49,9 @@ management:
         include: health
 
 application-tracker:
+  source:
+    nhs-jobs:
+      mode: ${NHS_JOBS_SOURCE_MODE:LIVE}
   reconciliation:
     initial-delay-ms: ${APPLICATION_DOCUMENT_RECONCILIATION_INITIAL_DELAY_MS:45000}
     delay-ms: ${APPLICATION_DOCUMENT_RECONCILIATION_DELAY_MS:30000}

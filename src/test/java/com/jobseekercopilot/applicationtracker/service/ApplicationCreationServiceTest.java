@@ -44,7 +44,8 @@ class ApplicationCreationServiceTest {
     @BeforeEach
     void setUp() {
         service = new ApplicationCreationService(
-                transaction, documentReferenceVerifier);
+                transaction, documentReferenceVerifier,
+                new AuthoritativeJobSourcePolicy("LIVE"));
     }
 
     @Test

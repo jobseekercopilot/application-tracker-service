@@ -9,7 +9,7 @@
     "license" : {
       "name" : "Proprietary and confidential"
     },
-    "version" : "3.4.0"
+    "version" : "3.5.0"
   },
   "servers" : [ {
     "url" : "http://localhost:8088",
@@ -345,26 +345,6 @@
           "required" : true
         },
         "responses" : {
-          "404" : {
-            "description" : "Application record not found",
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "200" : {
-            "description" : "Status updated successfully",
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ApplicationRecordResponse"
-                }
-              }
-            }
-          },
           "400" : {
             "description" : "Invalid status value",
             "content" : {
@@ -381,6 +361,26 @@
               "application/json" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404" : {
+            "description" : "Application record not found",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200" : {
+            "description" : "Status updated successfully",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApplicationRecordResponse"
                 }
               }
             }
@@ -993,8 +993,8 @@
           }
         } ],
         "responses" : {
-          "401" : {
-            "description" : "Missing, invalid or ambiguous authentication",
+          "403" : {
+            "description" : "Authenticated identity lacks reader permission",
             "content" : {
               "application/json" : {
                 "schema" : {
@@ -1003,8 +1003,8 @@
               }
             }
           },
-          "403" : {
-            "description" : "Authenticated identity lacks reader permission",
+          "401" : {
+            "description" : "Missing, invalid or ambiguous authentication",
             "content" : {
               "application/json" : {
                 "schema" : {
@@ -1299,6 +1299,45 @@
             "description" : "Provider-specific job identifier",
             "example" : "123456"
           },
+          "listingUrl" : {
+            "maxLength" : 2048,
+            "minLength" : 0,
+            "type" : "string",
+            "description" : "Authoritative provider listing URL",
+            "example" : "https://www.jobs.nhs.uk/candidate/jobadvert/C123"
+          },
+          "applyUrl" : {
+            "maxLength" : 2048,
+            "minLength" : 0,
+            "type" : "string",
+            "description" : "Official provider application URL when distinct from the listing URL"
+          },
+          "attributionLabel" : {
+            "maxLength" : 255,
+            "minLength" : 0,
+            "type" : "string",
+            "description" : "Provider attribution text",
+            "example" : "Vacancy source: NHS Jobs"
+          },
+          "attributionSourceUrl" : {
+            "maxLength" : 2048,
+            "minLength" : 0,
+            "type" : "string",
+            "description" : "Authoritative provider attribution URL",
+            "example" : "https://www.jobs.nhs.uk/"
+          },
+          "licenceUrl" : {
+            "maxLength" : 2048,
+            "minLength" : 0,
+            "type" : "string",
+            "description" : "Licence URL governing the provider data"
+          },
+          "disclaimer" : {
+            "maxLength" : 1000,
+            "minLength" : 0,
+            "type" : "string",
+            "description" : "Required provider no-endorsement statement"
+          },
           "jobTitle" : {
             "maxLength" : 300,
             "minLength" : 0,
@@ -1379,6 +1418,30 @@
             "type" : "string",
             "description" : "Provider-specific job identifier",
             "example" : "123456"
+          },
+          "listingUrl" : {
+            "type" : "string",
+            "description" : "Authoritative provider listing URL"
+          },
+          "applyUrl" : {
+            "type" : "string",
+            "description" : "Official provider application URL when distinct from the listing URL"
+          },
+          "attributionLabel" : {
+            "type" : "string",
+            "description" : "Provider attribution text"
+          },
+          "attributionSourceUrl" : {
+            "type" : "string",
+            "description" : "Authoritative provider attribution URL"
+          },
+          "licenceUrl" : {
+            "type" : "string",
+            "description" : "Licence URL governing the provider data"
+          },
+          "disclaimer" : {
+            "type" : "string",
+            "description" : "Required provider no-endorsement statement"
           },
           "provenance" : {
             "type" : "string",

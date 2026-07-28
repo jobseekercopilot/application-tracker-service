@@ -54,7 +54,7 @@ verification before building the image. The Docker build compiles the test
 sources but does not execute the PostgreSQL Testcontainers suite because a
 standard image build must not receive the host Docker socket.
 
-The version `3.4.0` contract retains the owner-scoped public list and lifecycle
+The version `3.5.0` contract retains the owner-scoped public list and lifecycle
 concurrency contracts while replacing the unsafe raw-entity System Data routes
 with a constrained, versioned, owner-and-scenario-scoped fixture boundary and
 adds backward-compatible activity-history, recoverable generated-withdrawal
@@ -62,6 +62,9 @@ and durable document-replacement and document-reference reconciliation
 operations. A withdrawal or replacement
 returns a durable operation ID and either a completed `200` or recovery-pending
 `202`; it never reports success after only part of a cross-service workflow. It
+It also preserves validated authoritative listing, application and attribution
+metadata with each tracked job. NHS fixture URLs are accepted only in the
+explicit fixture source mode; live mode accepts only the official vacancy path.
 also publishes owner-scoped reconciliation state, safely repairs missing
 immutable reference metadata, and blocks lifecycle progression when references
 are unverified. It continues to publish the explicit response and stable

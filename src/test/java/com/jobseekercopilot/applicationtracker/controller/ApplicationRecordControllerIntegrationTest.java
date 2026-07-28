@@ -238,6 +238,12 @@ class ApplicationRecordControllerIntegrationTest {
                 .canonicalJobId("canonical-nhs-c123")
                 .provider("NHS_JOBS")
                 .externalJobId("C123")
+                .listingUrl("https://www.jobs.nhs.uk/candidate/jobadvert/C123")
+                .applyUrl("https://www.jobs.nhs.uk/candidate/jobadvert/C123")
+                .attributionLabel("Vacancy source: NHS Jobs")
+                .attributionSourceUrl("https://www.jobs.nhs.uk/")
+                .licenceUrl("https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/")
+                .disclaimer("NHS Jobs does not endorse Job Seeker Copilot.")
                 .jobTitle("Community Staff Nurse")
                 .companyName("Example NHS Trust")
                 .location("London")
@@ -256,6 +262,12 @@ class ApplicationRecordControllerIntegrationTest {
                         .value("canonical-nhs-c123"))
                 .andExpect(jsonPath("$.provider").value("NHS_JOBS"))
                 .andExpect(jsonPath("$.externalJobId").value("C123"))
+                .andExpect(jsonPath("$.listingUrl").value("https://www.jobs.nhs.uk/candidate/jobadvert/C123"))
+                .andExpect(jsonPath("$.applyUrl").value("https://www.jobs.nhs.uk/candidate/jobadvert/C123"))
+                .andExpect(jsonPath("$.attributionLabel").value("Vacancy source: NHS Jobs"))
+                .andExpect(jsonPath("$.attributionSourceUrl").value("https://www.jobs.nhs.uk/"))
+                .andExpect(jsonPath("$.licenceUrl").value("https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/"))
+                .andExpect(jsonPath("$.disclaimer").value("NHS Jobs does not endorse Job Seeker Copilot."))
                 .andExpect(jsonPath("$.status").value("APPLIED"))
                 .andReturn()
                 .getResponse()
@@ -269,7 +281,13 @@ class ApplicationRecordControllerIntegrationTest {
                 .andExpect(jsonPath("$.canonicalJobId")
                         .value("canonical-nhs-c123"))
                 .andExpect(jsonPath("$.provider").value("NHS_JOBS"))
-                .andExpect(jsonPath("$.externalJobId").value("C123"));
+                .andExpect(jsonPath("$.externalJobId").value("C123"))
+                .andExpect(jsonPath("$.listingUrl").value("https://www.jobs.nhs.uk/candidate/jobadvert/C123"))
+                .andExpect(jsonPath("$.applyUrl").value("https://www.jobs.nhs.uk/candidate/jobadvert/C123"))
+                .andExpect(jsonPath("$.attributionLabel").value("Vacancy source: NHS Jobs"))
+                .andExpect(jsonPath("$.attributionSourceUrl").value("https://www.jobs.nhs.uk/"))
+                .andExpect(jsonPath("$.licenceUrl").value("https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/"))
+                .andExpect(jsonPath("$.disclaimer").value("NHS Jobs does not endorse Job Seeker Copilot."));
 
         mockMvc.perform(get("/api/v1/applications/user/{userId}", ownerId)
                         .header(HttpHeaders.AUTHORIZATION, authorization(ownerId)))
@@ -278,12 +296,24 @@ class ApplicationRecordControllerIntegrationTest {
                 .andExpect(jsonPath("$[0].canonicalJobId")
                         .value("canonical-nhs-c123"))
                 .andExpect(jsonPath("$[0].provider").value("NHS_JOBS"))
-                .andExpect(jsonPath("$[0].externalJobId").value("C123"));
+                .andExpect(jsonPath("$[0].externalJobId").value("C123"))
+                .andExpect(jsonPath("$[0].listingUrl").value("https://www.jobs.nhs.uk/candidate/jobadvert/C123"))
+                .andExpect(jsonPath("$[0].applyUrl").value("https://www.jobs.nhs.uk/candidate/jobadvert/C123"))
+                .andExpect(jsonPath("$[0].attributionLabel").value("Vacancy source: NHS Jobs"))
+                .andExpect(jsonPath("$[0].attributionSourceUrl").value("https://www.jobs.nhs.uk/"))
+                .andExpect(jsonPath("$[0].licenceUrl").value("https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/"))
+                .andExpect(jsonPath("$[0].disclaimer").value("NHS Jobs does not endorse Job Seeker Copilot."));
 
         ApplicationRecord persisted =
                 repository.findById(applicationId).orElseThrow();
         assertThat(persisted.getProvider()).isEqualTo("NHS_JOBS");
         assertThat(persisted.getExternalJobId()).isEqualTo("C123");
+        assertThat(persisted.getListingUrl()).isEqualTo("https://www.jobs.nhs.uk/candidate/jobadvert/C123");
+        assertThat(persisted.getApplyUrl()).isEqualTo("https://www.jobs.nhs.uk/candidate/jobadvert/C123");
+        assertThat(persisted.getAttributionLabel()).isEqualTo("Vacancy source: NHS Jobs");
+        assertThat(persisted.getAttributionSourceUrl()).isEqualTo("https://www.jobs.nhs.uk/");
+        assertThat(persisted.getLicenceUrl()).isEqualTo("https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/");
+        assertThat(persisted.getDisclaimer()).isEqualTo("NHS Jobs does not endorse Job Seeker Copilot.");
     }
 
     @Test

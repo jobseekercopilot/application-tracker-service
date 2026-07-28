@@ -34,7 +34,7 @@ The OpenAPI `info.version` follows semantic versioning:
 - major: removed or renamed operations/fields, narrowed values, changed
   authentication, or any other consumer-breaking change.
 
-The contract is version `3.4.0`. It retains the explicitly defined owner-scoped
+The contract is version `3.5.0`. It retains the explicitly defined owner-scoped
 list boundary and lifecycle concurrency metadata from `2.1.0`, and replaces
 raw-entity, owner-wide System Data operations with a constrained versioned seed
 request and scenario-scoped seed/reset/verify operations. The minor version
@@ -44,6 +44,10 @@ and Tracker-owned document-replacement workflows. Version `3.4.0` adds the
 owner-scoped durable document-reference reconciliation status operation. These
 additions are backward compatible: existing fields remain, while `202`,
 operation identity, retry state, recovery code and explicit reconciliation
+Version `3.5.0` adds backward-compatible authoritative listing, application and
+attribution metadata to application create and read models. NHS source metadata
+is validated against either the official live vacancy origin and path or the
+isolated fixture origin selected by configuration.
 health make partial or inconsistent cross-service work visible.
 
 The owner-scoped list operation explicitly defines its service-token/Bearer

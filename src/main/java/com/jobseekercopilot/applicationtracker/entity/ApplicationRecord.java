@@ -45,6 +45,24 @@ public class ApplicationRecord {
 
     private String externalJobId;
 
+    @Column(length = 2048)
+    private String listingUrl;
+
+    @Column(length = 2048)
+    private String applyUrl;
+
+    @Column(length = 255)
+    private String attributionLabel;
+
+    @Column(length = 2048)
+    private String attributionSourceUrl;
+
+    @Column(length = 2048)
+    private String licenceUrl;
+
+    @Column(length = 1000)
+    private String disclaimer;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
     @Builder.Default
