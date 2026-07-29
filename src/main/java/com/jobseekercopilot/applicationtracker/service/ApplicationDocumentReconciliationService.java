@@ -480,6 +480,18 @@ public class ApplicationDocumentReconciliationService {
                         reference.getContentSha256());
                 changed = true;
             }
+            if (application.getCvDocumentEvidenceProvenance() == null
+                    && reference.getEvidenceProvenance() != null) {
+                application.setCvDocumentEvidenceProvenance(
+                        reference.getEvidenceProvenance());
+                changed = true;
+            }
+            if (application.getCvDocumentGroundingState() == null
+                    && reference.getGroundingState() != null) {
+                application.setCvDocumentGroundingState(
+                        reference.getGroundingState());
+                changed = true;
+            }
             return changed;
         }
 
@@ -500,6 +512,18 @@ public class ApplicationDocumentReconciliationService {
             if (application.getCoverLetterDocumentContentSha256() == null) {
                 application.setCoverLetterDocumentContentSha256(
                         reference.getContentSha256());
+                changed = true;
+            }
+            if (application.getCoverLetterDocumentEvidenceProvenance() == null
+                    && reference.getEvidenceProvenance() != null) {
+                application.setCoverLetterDocumentEvidenceProvenance(
+                        reference.getEvidenceProvenance());
+                changed = true;
+            }
+            if (application.getCoverLetterDocumentGroundingState() == null
+                    && reference.getGroundingState() != null) {
+                application.setCoverLetterDocumentGroundingState(
+                        reference.getGroundingState());
                 changed = true;
             }
             return changed;
@@ -523,6 +547,18 @@ public class ApplicationDocumentReconciliationService {
                     .getApplicationUsedCvDocumentContentSha256() == null) {
                 application.setApplicationUsedCvDocumentContentSha256(
                         reference.getContentSha256());
+                changed = true;
+            }
+            if (application.getApplicationUsedCvEvidenceProvenance() == null
+                    && reference.getEvidenceProvenance() != null) {
+                application.setApplicationUsedCvEvidenceProvenance(
+                        reference.getEvidenceProvenance());
+                changed = true;
+            }
+            if (application.getApplicationUsedCvGroundingState() == null
+                    && reference.getGroundingState() != null) {
+                application.setApplicationUsedCvGroundingState(
+                        reference.getGroundingState());
                 changed = true;
             }
             return changed;
@@ -549,6 +585,21 @@ public class ApplicationDocumentReconciliationService {
                     == null) {
                 application.setApplicationUsedCoverLetterDocumentContentSha256(
                         reference.getContentSha256());
+                changed = true;
+            }
+            if (application
+                            .getApplicationUsedCoverLetterEvidenceProvenance()
+                    == null
+                    && reference.getEvidenceProvenance() != null) {
+                application.setApplicationUsedCoverLetterEvidenceProvenance(
+                        reference.getEvidenceProvenance());
+                changed = true;
+            }
+            if (application.getApplicationUsedCoverLetterGroundingState()
+                    == null
+                    && reference.getGroundingState() != null) {
+                application.setApplicationUsedCoverLetterGroundingState(
+                        reference.getGroundingState());
                 changed = true;
             }
             return changed;

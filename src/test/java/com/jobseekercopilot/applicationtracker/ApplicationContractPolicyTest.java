@@ -24,7 +24,7 @@ class ApplicationContractPolicyTest {
         JsonNode operation =
                 contract.at("/paths/~1api~1v1~1applications~1user~1{userId}/get");
 
-        assertEquals("3.4.0", contract.at("/info/version").asText());
+        assertEquals("3.5.0", contract.at("/info/version").asText());
         assertEquals("getApplicationsForUser", operation.path("operationId").asText());
         assertEquals(
                         Set.of("bearerAuth", "serviceToken"),
