@@ -22,10 +22,15 @@ not create or mutate an application.
 
 ## Current versus application-used
 
-While an application is `DOCUMENTS_GENERATED`, its current CV and cover-letter
-references may be replaced after revalidation. On the first transition to any
-later status, Application Tracker copies both descriptors into immutable
-application-used fields and timestamps the freeze.
+While an application is `SAVED` or `DOCUMENTS_GENERATED`, its current CV and
+cover-letter references may be attached or replaced after revalidation. A
+saved application remains `SAVED` as references are attached; the caller must
+explicitly request `DOCUMENTS_GENERATED` after a complete pair exists.
+
+On transition to `APPLIED`, Application Tracker copies a complete current pair
+into immutable application-used fields and timestamps the freeze. A saved
+application with no documents may also move directly to `APPLIED`, while a
+partial pair is rejected.
 
 Later current selection changes in Document Store cannot rewrite that snapshot.
 Even if a separate status-lifecycle change later permits status regression, an

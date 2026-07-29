@@ -22,6 +22,7 @@ public class UpdateStatusRequest {
             description = "New status value",
             example = "APPLIED",
             allowableValues = {
+                    "SAVED",
                     "DOCUMENTS_GENERATED",
                     "APPLIED",
                     "INTERVIEW",

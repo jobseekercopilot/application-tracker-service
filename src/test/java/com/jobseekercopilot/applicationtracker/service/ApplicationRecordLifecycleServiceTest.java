@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.access.AccessDeniedException;
 
 @ExtendWith(MockitoExtension.class)
 class ApplicationRecordLifecycleServiceTest {
@@ -127,6 +128,43 @@ class ApplicationRecordLifecycleServiceTest {
     }
 
     @Test
+    void producerCannotAdvanceBeyondTheSavedDocumentPreparationBridge() {
+        ApplicationRecord record = record(ApplicationStatus.SAVED, 0);
+        when(repository.findByIdAndUserId(record.getId(), record.getUserId()))
+                .thenReturn(Optional.of(record));
+
+        assertThatThrownBy(() -> service.updateStatus(
+                        record.getUserId(),
+                        record.getId(),
+                        request("APPLIED", 0L),
+                        ApplicationCommandActor.service(
+                                "application-producer")))
+                .isInstanceOf(AccessDeniedException.class);
+
+        assertThat(record.getStatus()).isEqualTo(ApplicationStatus.SAVED);
+        verify(repository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void producerCanIdempotentlyRecoverCompletedDocumentPreparation() {
+        ApplicationRecord record =
+                record(ApplicationStatus.DOCUMENTS_GENERATED, 3);
+        when(repository.findByIdAndUserId(record.getId(), record.getUserId()))
+                .thenReturn(Optional.of(record));
+
+        ApplicationRecordResponse response = service.updateStatus(
+                record.getUserId(),
+                record.getId(),
+                request("DOCUMENTS_GENERATED", 2L),
+                ApplicationCommandActor.service("application-producer"));
+
+        assertThat(response.getStatus())
+                .isEqualTo(ApplicationStatus.DOCUMENTS_GENERATED);
+        assertThat(response.getVersion()).isEqualTo(3);
+        verify(repository, never()).saveAndFlush(any());
+    }
+
+    @Test
     void approvedTransitionPreservesAppliedTimestampAndPersists() {
         ApplicationRecord record = record(ApplicationStatus.APPLIED, 3);
         LocalDateTime appliedAt = record.getAppliedAt();
@@ -159,7 +197,8 @@ class ApplicationRecordLifecycleServiceTest {
         LocalDateTime now = LocalDateTime.of(2026, 7, 26, 18, 0);
         String cvId = "11111111-1111-4111-8111-111111111111";
         String coverLetterId = "22222222-2222-4222-8222-222222222222";
-        boolean progressed = status != ApplicationStatus.DOCUMENTS_GENERATED;
+        boolean progressed = status != ApplicationStatus.SAVED
+                && status != ApplicationStatus.DOCUMENTS_GENERATED;
         return ApplicationRecord.builder()
                 .id(UUID.randomUUID())
                 .userId("synthetic-owner")
@@ -190,7 +229,10 @@ class ApplicationRecordLifecycleServiceTest {
                 .status(status)
                 .createdAt(now.minusDays(2))
                 .updatedAt(now.minusDays(1))
-                .appliedAt(status == ApplicationStatus.DOCUMENTS_GENERATED
+                .appliedAt(status == ApplicationStatus.SAVED
+                                || status
+                                        == ApplicationStatus
+                                                .DOCUMENTS_GENERATED
                         ? null
                         : now.minusDays(1))
                 .version(version)

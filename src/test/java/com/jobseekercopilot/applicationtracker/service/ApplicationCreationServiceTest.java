@@ -128,6 +128,43 @@ class ApplicationCreationServiceTest {
     }
 
     @Test
+    void manualApplicationCanExplicitlyStartSavedWithAnApprovedDocument() {
+        CreateApplicationRequest request = CreateApplicationRequest.builder()
+                .userId("owner-1")
+                .jobId("manual-job-1")
+                .canonicalJobId("manual-job-1")
+                .provider("manual")
+                .externalJobId("manual-job-1")
+                .jobTitle("Support Engineer")
+                .companyName("Example Ltd")
+                .provenance(ApplicationProvenance.MANUAL)
+                .initialStatus(ApplicationStatus.SAVED)
+                .cvDocumentId(CV_ID)
+                .build();
+        when(transaction.findReplayOrRejectDuplicate(
+                        anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(Optional.empty());
+        when(documentReferenceVerifier.verify(
+                        "owner-1", CV_ID, "manual-job-1", DocumentType.CV))
+                .thenReturn(reference(CV_ID, DocumentType.CV, "manual-job-1"));
+        when(transaction.create(
+                        any(ApplicationRecord.class),
+                        any(ApplicationCommandActor.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        ApplicationCreationOutcome outcome =
+                service.createApplication("owner-1", "saved-attempt-1", request);
+
+        assertThat(outcome.record().getStatus())
+                .isEqualTo(ApplicationStatus.SAVED);
+        assertThat(outcome.record().getAppliedAt()).isNull();
+        assertThat(outcome.record().getCvDocumentId())
+                .isEqualTo(CV_ID.toString());
+        assertThat(outcome.record().getApplicationUsedCvDocumentId()).isNull();
+        assertThat(outcome.record().getApplicationUsedAt()).isNull();
+    }
+
+    @Test
     void externalApplicationFreezesOnlyTheApprovedDocumentThatWasSupplied() {
         CreateApplicationRequest request = CreateApplicationRequest.builder()
                 .userId("owner-1")
@@ -265,6 +302,18 @@ class ApplicationCreationServiceTest {
                 .hasMessage("GENERATED applications require both approved document references.");
         verify(transaction, never()).findReplayOrRejectDuplicate(
                 anyString(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void generatedApplicationsRejectSavedInitialState() {
+        CreateApplicationRequest request = generatedRequest();
+        request.setInitialStatus(ApplicationStatus.SAVED);
+
+        assertThatThrownBy(() ->
+                service.createApplication("owner-1", "attempt-1", request))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining(
+                        "GENERATED applications may start as DOCUMENTS_GENERATED or APPLIED");
     }
 
     @Test

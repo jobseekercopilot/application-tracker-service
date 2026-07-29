@@ -10,7 +10,7 @@ import com.jobseekercopilot.applicationtracker.dto.UpdateStatusRequest;
 import com.jobseekercopilot.applicationtracker.dto.UpdateDocumentReferenceRequest;
 import com.jobseekercopilot.applicationtracker.dto.WithdrawGeneratedApplicationResponse;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationLifecycle;
-import com.jobseekercopilot.applicationtracker.entity.ApplicationProvenance;
+import com.jobseekercopilot.applicationtracker.entity.ApplicationActorType;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationRecord;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationStatus;
 import com.jobseekercopilot.applicationtracker.exception.ApplicationVersionConflictException;
@@ -24,6 +24,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.access.AccessDeniedException;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -42,6 +43,7 @@ public class ApplicationRecordService {
     private static final Logger log = LoggerFactory.getLogger(ApplicationRecordService.class);
 
     private static final Set<ApplicationStatus> SUPPORTED_STATUS_UPDATES = EnumSet.of(
+            ApplicationStatus.SAVED,
             ApplicationStatus.DOCUMENTS_GENERATED,
             ApplicationStatus.APPLIED,
             ApplicationStatus.INTERVIEW,
@@ -149,6 +151,7 @@ public class ApplicationRecordService {
 
         ApplicationStatus previousStatus = record.getStatus();
         ApplicationStatus newStatus = parseSupportedStatus(request.getStatus());
+        requireActorCanTransition(actor, previousStatus, newStatus);
         if (previousStatus == newStatus) {
             return mapToResponse(record);
         }
@@ -157,13 +160,14 @@ public class ApplicationRecordService {
                 && request.getExpectedVersion() != record.getVersion()) {
             throw new ApplicationVersionConflictException();
         }
-        if (newStatus != ApplicationStatus.DOCUMENTS_GENERATED) {
+        requireEligibleSavedTransition(record, previousStatus, newStatus);
+        if (hasAnyDocumentReference(record)) {
             reconciliationService.requireHealthy(record);
         }
         Instant occurredAt = resolveOccurredAt(record, request.getOccurredAt());
         if (newStatus != ApplicationStatus.DOCUMENTS_GENERATED
-                && record.getApplicationUsedCvDocumentId() == null
-                && requiresFrozenDocumentReferences(record)) {
+                && !hasAnyApplicationUsedDocumentReference(record)
+                && hasCompleteCurrentDocumentReferences(record)) {
             freezeApplicationUsedReferences(
                     record, LocalDateTime.ofInstant(occurredAt, ZoneOffset.UTC));
         }
@@ -206,7 +210,7 @@ public class ApplicationRecordService {
             ApplicationCommandActor actor) {
         ApplicationRecord record = findOwnedApplicationForUpdate(ownerId, id);
         requireNoActiveDocumentWorkflow(record);
-        if (record.getStatus() != ApplicationStatus.DOCUMENTS_GENERATED
+        if (!isDocumentSelectionEditable(record.getStatus())
                 || record.getApplicationUsedCvDocumentId() != null) {
             throw new InvalidStatusException("Documents cannot be replaced after the application has been marked as applied.");
         }
@@ -347,9 +351,66 @@ public class ApplicationRecordService {
         record.setApplicationUsedAt(occurredAt);
     }
 
-    private boolean requiresFrozenDocumentReferences(ApplicationRecord record) {
-        return record.getProvenance() == null
-                || record.getProvenance() == ApplicationProvenance.GENERATED;
+    private void requireEligibleSavedTransition(
+            ApplicationRecord record,
+            ApplicationStatus previousStatus,
+            ApplicationStatus newStatus) {
+        if (previousStatus != ApplicationStatus.SAVED) {
+            return;
+        }
+        boolean complete = hasCompleteCurrentDocumentReferences(record);
+        if (newStatus == ApplicationStatus.DOCUMENTS_GENERATED && !complete) {
+            throw new InvalidDocumentReferenceException();
+        }
+        if (newStatus == ApplicationStatus.APPLIED
+                && hasAnyDocumentReference(record)
+                && !complete) {
+            throw new InvalidDocumentReferenceException();
+        }
+    }
+
+    private void requireActorCanTransition(
+            ApplicationCommandActor actor,
+            ApplicationStatus previousStatus,
+            ApplicationStatus newStatus) {
+        if (actor.actorType() != ApplicationActorType.SERVICE) {
+            return;
+        }
+        boolean savedBridge =
+                previousStatus == ApplicationStatus.SAVED
+                        && newStatus
+                                == ApplicationStatus.DOCUMENTS_GENERATED;
+        boolean completedBridgeRetry =
+                previousStatus == ApplicationStatus.DOCUMENTS_GENERATED
+                        && newStatus
+                                == ApplicationStatus.DOCUMENTS_GENERATED;
+        if (!savedBridge && !completedBridgeRetry) {
+            throw new AccessDeniedException(
+                    "Producer status commands are limited to document preparation");
+        }
+    }
+
+    private boolean isDocumentSelectionEditable(ApplicationStatus status) {
+        return status == ApplicationStatus.SAVED
+                || status == ApplicationStatus.DOCUMENTS_GENERATED;
+    }
+
+    private boolean hasAnyDocumentReference(ApplicationRecord record) {
+        return record.getCvDocumentId() != null
+                || record.getCoverLetterDocumentId() != null
+                || hasAnyApplicationUsedDocumentReference(record);
+    }
+
+    private boolean hasCompleteCurrentDocumentReferences(
+            ApplicationRecord record) {
+        return currentCvReference(record) != null
+                && currentCoverLetterReference(record) != null;
+    }
+
+    private boolean hasAnyApplicationUsedDocumentReference(
+            ApplicationRecord record) {
+        return record.getApplicationUsedCvDocumentId() != null
+                || record.getApplicationUsedCoverLetterDocumentId() != null;
     }
 
     private Instant resolveOccurredAt(
@@ -507,6 +568,6 @@ public class ApplicationRecordService {
         }
         log.warn("Invalid application status requested status={}", status);
         throw new InvalidStatusException("Invalid status: " + status
-                + ". Allowed values: DOCUMENTS_GENERATED, APPLIED, INTERVIEW, UNSUCCESSFUL, OFFER, ACCEPTED, REJECTED_BY_USER, WITHDRAWN");
+                + ". Allowed values: SAVED, DOCUMENTS_GENERATED, APPLIED, INTERVIEW, UNSUCCESSFUL, OFFER, ACCEPTED, REJECTED_BY_USER, WITHDRAWN");
     }
 }

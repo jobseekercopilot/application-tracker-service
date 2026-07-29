@@ -372,7 +372,9 @@ public class ApplicationReplacementWorkflowService {
     }
 
     private void requireReplaceable(ApplicationRecord application) {
-        if (application.getStatus() != ApplicationStatus.DOCUMENTS_GENERATED
+        if ((application.getStatus() != ApplicationStatus.SAVED
+                        && application.getStatus()
+                                != ApplicationStatus.DOCUMENTS_GENERATED)
                 || application.getApplicationUsedCvDocumentId() != null) {
             throw new InvalidStatusException(
                     "Documents cannot be replaced after the application has been marked as applied.");

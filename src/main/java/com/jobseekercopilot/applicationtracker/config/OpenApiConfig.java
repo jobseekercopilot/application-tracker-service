@@ -51,6 +51,7 @@ public class OpenApiConfig {
                                 It does NOT store document contents.
                                 
                                 ApplicationStatus values:
+                                - SAVED - Job has been saved to the claimant's applications
                                 - DOCUMENTS_GENERATED - Documents have been generated for the job
                                 - APPLIED - Application has been submitted
                                 - INTERVIEW - Interview stage
@@ -60,7 +61,7 @@ public class OpenApiConfig {
                                 - REJECTED_BY_USER - Offer or opportunity rejected by the user
                                 - WITHDRAWN - User withdrew their application
                                 """)
-                        .version("4.0.0")
+                        .version("4.1.0")
                         .contact(new Contact()
                                 .name("Jobseeker Copilot"))
                         .license(new License()

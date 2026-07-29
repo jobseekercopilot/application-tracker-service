@@ -18,6 +18,7 @@ import com.jobseekercopilot.applicationtracker.dto.DocumentType;
 import com.jobseekercopilot.applicationtracker.dto.DocumentVersionReference;
 import com.jobseekercopilot.applicationtracker.dto.UpdateDocumentReferenceRequest;
 import com.jobseekercopilot.applicationtracker.dto.UpdateStatusRequest;
+import com.jobseekercopilot.applicationtracker.entity.ApplicationProvenance;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationRecord;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationStatus;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationRecordRepository;
@@ -142,6 +143,139 @@ class ApplicationSecurityIntegrationTest {
                 .andExpect(jsonPath("$", hasSize(1)));
 
         assertTrue(repository.findByUserId("victim").isEmpty());
+    }
+
+    @Test
+    void savedApplicationAttachesDocumentsAndProgressesOnlyWithCompletePair()
+            throws Exception {
+        String owner = "saved-owner";
+        CreateApplicationRequest request = CreateApplicationRequest.builder()
+                .userId(owner)
+                .jobId("saved-job-1")
+                .canonicalJobId("saved-job-1")
+                .provider("REED")
+                .externalJobId("reed-saved-1")
+                .jobTitle("Platform Engineer")
+                .companyName("Example Ltd")
+                .provenance(ApplicationProvenance.MANUAL)
+                .initialStatus(ApplicationStatus.SAVED)
+                .build();
+
+        MvcResult created = mockMvc.perform(post("/api/v1/applications")
+                        .header(HttpHeaders.AUTHORIZATION, authorization(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("SAVED"))
+                .andExpect(jsonPath("$.appliedAt").doesNotExist())
+                .andReturn();
+        UUID applicationId = UUID.fromString(objectMapper
+                .readTree(created.getResponse().getContentAsString())
+                .path("id")
+                .asText());
+
+        mockMvc.perform(patch(
+                                "/api/v1/applications/{id}/status",
+                                applicationId)
+                        .header(
+                                ApplicationServiceIdentityFilter.SERVICE_HEADER,
+                                PRODUCER_TOKEN)
+                        .header(
+                                ApplicationOwnerResolver.OWNER_HEADER,
+                                owner)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"status":"APPLIED"}
+                                """))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+
+        attachDocument(owner, applicationId, "CV", CV_ID);
+
+        mockMvc.perform(patch(
+                                "/api/v1/applications/{id}/status",
+                                applicationId)
+                        .header(
+                                ApplicationServiceIdentityFilter.SERVICE_HEADER,
+                                PRODUCER_TOKEN)
+                        .header(
+                                ApplicationOwnerResolver.OWNER_HEADER,
+                                owner)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"status":"DOCUMENTS_GENERATED"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message")
+                        .value("Document reference is not eligible for this application."));
+
+        attachDocument(
+                owner,
+                applicationId,
+                "COVER_LETTER",
+                COVER_LETTER_ID);
+
+        mockMvc.perform(patch(
+                                "/api/v1/applications/{id}/status",
+                                applicationId)
+                        .header(
+                                ApplicationServiceIdentityFilter.SERVICE_HEADER,
+                                PRODUCER_TOKEN)
+                        .header(
+                                ApplicationOwnerResolver.OWNER_HEADER,
+                                owner)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"status":"DOCUMENTS_GENERATED"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status")
+                        .value("DOCUMENTS_GENERATED"))
+                .andExpect(jsonPath("$.appliedAt").doesNotExist())
+                .andExpect(jsonPath("$.cvDocumentId")
+                        .value(CV_ID.toString()))
+                .andExpect(jsonPath("$.coverLetterDocumentId")
+                        .value(COVER_LETTER_ID.toString()));
+
+        mockMvc.perform(patch(
+                                "/api/v1/applications/{id}/status",
+                                applicationId)
+                        .header(
+                                ApplicationServiceIdentityFilter.SERVICE_HEADER,
+                                PRODUCER_TOKEN)
+                        .header(
+                                ApplicationOwnerResolver.OWNER_HEADER,
+                                owner)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"status":"DOCUMENTS_GENERATED"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status")
+                        .value("DOCUMENTS_GENERATED"));
+
+        mockMvc.perform(get(
+                                "/api/v1/applications/{id}/history",
+                                applicationId)
+                        .header(HttpHeaders.AUTHORIZATION, authorization(owner))
+                        .queryParam("size", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentStatus")
+                        .value("DOCUMENTS_GENERATED"))
+                .andExpect(jsonPath("$.reconciled").value(true))
+                .andExpect(jsonPath("$.events", hasSize(4)))
+                .andExpect(jsonPath("$.events[0].eventType")
+                        .value("APPLICATION_CREATED"))
+                .andExpect(jsonPath("$.events[0].toStatus").value("SAVED"))
+                .andExpect(jsonPath("$.events[1].eventType")
+                        .value("DOCUMENT_REFERENCE_CHANGED"))
+                .andExpect(jsonPath("$.events[2].eventType")
+                        .value("DOCUMENT_REFERENCE_CHANGED"))
+                .andExpect(jsonPath("$.events[3].eventType")
+                        .value("STATUS_CHANGED"))
+                .andExpect(jsonPath("$.events[3].fromStatus").value("SAVED"))
+                .andExpect(jsonPath("$.events[3].toStatus")
+                        .value("DOCUMENTS_GENERATED"));
     }
 
     @Test
@@ -285,6 +419,44 @@ class ApplicationSecurityIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
                                 UpdateStatusRequest.builder().status("APPLIED").build())))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+
+        mockMvc.perform(patch("/api/v1/applications/{id}/status", id)
+                        .header(
+                                ApplicationServiceIdentityFilter.SERVICE_HEADER,
+                                PRODUCER_TOKEN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                UpdateStatusRequest.builder()
+                                        .status("APPLIED")
+                                        .build())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message")
+                        .value("Application owner is required for service requests."));
+
+        mockMvc.perform(patch("/api/v1/applications/{id}/status", id)
+                        .header(
+                                ApplicationServiceIdentityFilter.SERVICE_HEADER,
+                                PRODUCER_TOKEN)
+                        .header(ApplicationOwnerResolver.OWNER_HEADER, "bob")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                UpdateStatusRequest.builder()
+                                        .status("APPLIED")
+                                        .build())))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(patch("/api/v1/applications/{id}/status", id)
+                        .header(
+                                ApplicationServiceIdentityFilter.SERVICE_HEADER,
+                                READER_TOKEN)
+                        .header(ApplicationOwnerResolver.OWNER_HEADER, "alice")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                UpdateStatusRequest.builder()
+                                        .status("APPLIED")
+                                        .build())))
                 .andExpect(status().isForbidden());
 
         mockMvc.perform(get("/api/v1/applications/user/{userId}", "alice")
@@ -392,6 +564,29 @@ class ApplicationSecurityIntegrationTest {
                 .cvDocumentId(CV_ID)
                 .coverLetterDocumentId(COVER_LETTER_ID)
                 .build();
+    }
+
+    private void attachDocument(
+            String owner,
+            UUID applicationId,
+            String type,
+            UUID documentId)
+            throws Exception {
+        mockMvc.perform(patch(
+                                "/api/v1/applications/{id}/document-reference",
+                                applicationId)
+                        .header(
+                                ApplicationServiceIdentityFilter.SERVICE_HEADER,
+                                PRODUCER_TOKEN)
+                        .header(ApplicationOwnerResolver.OWNER_HEADER, owner)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                UpdateDocumentReferenceRequest.builder()
+                                        .documentType(type)
+                                        .documentId(documentId)
+                                        .build())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SAVED"));
     }
 
     private DocumentVersionReference reference(

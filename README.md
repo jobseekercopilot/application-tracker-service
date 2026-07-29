@@ -54,7 +54,7 @@ verification before building the image. The Docker build compiles the test
 sources but does not execute the PostgreSQL Testcontainers suite because a
 standard image build must not receive the host Docker socket.
 
-The version `4.0.0` contract retains the owner-scoped public list and lifecycle
+The version `4.1.0` contract retains the owner-scoped public list and lifecycle
 concurrency contracts while replacing the unsafe raw-entity System Data routes
 with a constrained, versioned, owner-and-scenario-scoped fixture boundary and
 adds backward-compatible activity-history, recoverable generated-withdrawal
@@ -71,6 +71,10 @@ authentication, authorization, conflict and owner-mismatch error schemas used
 by consumers. Version `4.0.0` also aligns evidence-section values with the
 canonical User Profile and Document Store taxonomy so approved generated
 document references can be consumed without translation.
+
+Version `4.1.0` adds the authoritative `SAVED` lifecycle state. Existing
+manual/external requests still default to `APPLIED`; callers opt into `SAVED`
+explicitly and may attach validated documents before progressing.
 
 ## Security boundary
 

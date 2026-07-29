@@ -34,6 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -386,6 +387,161 @@ class ApplicationRecordServiceTest {
     }
 
     @Test
+    void savedApplicationAcceptsValidatedDocumentAttachmentWithoutChangingStatus() {
+        UUID id = UUID.randomUUID();
+        ApplicationRecord record = savedRecord(id);
+        when(repository.findForUpdateByIdAndUserId(id, "user-123"))
+                .thenReturn(Optional.of(record));
+        when(documentReferenceVerifier.verify(
+                        "user-123", CV_ID, "job-456", DocumentType.CV))
+                .thenReturn(reference(CV_ID, DocumentType.CV));
+        when(repository.saveAndFlush(record)).thenReturn(record);
+
+        ApplicationRecordResponse response = service.updateDocumentReference(
+                "user-123",
+                id,
+                UpdateDocumentReferenceRequest.builder()
+                        .documentType("CV")
+                        .documentId(CV_ID)
+                        .build());
+
+        assertThat(response.getStatus()).isEqualTo(ApplicationStatus.SAVED);
+        assertThat(response.getCvDocumentReference().getDocumentId())
+                .isEqualTo(CV_ID);
+        assertThat(response.getCoverLetterDocumentReference()).isNull();
+        assertThat(response.getApplicationUsedCvDocumentReference()).isNull();
+        verify(eventRecorder).recordDocumentReferenceChanged(
+                any(ApplicationRecord.class),
+                any(),
+                any(ApplicationCommandActor.class),
+                anyString());
+    }
+
+    @Test
+    void savedApplicationRequiresCompletePairBeforeDocumentsGenerated() {
+        UUID id = UUID.randomUUID();
+        ApplicationRecord record = savedRecord(id);
+        setCurrentCv(record, reference(CV_ID, DocumentType.CV));
+        when(repository.findByIdAndUserId(id, "user-123"))
+                .thenReturn(Optional.of(record));
+
+        assertThatThrownBy(() -> service.updateStatus(
+                        "user-123",
+                        id,
+                        UpdateStatusRequest.builder()
+                                .status("DOCUMENTS_GENERATED")
+                                .build()))
+                .isInstanceOf(
+                        com.jobseekercopilot.applicationtracker.exception
+                                .InvalidDocumentReferenceException.class);
+
+        assertThat(record.getStatus()).isEqualTo(ApplicationStatus.SAVED);
+        assertThat(record.getAppliedAt()).isNull();
+        verify(repository, never()).saveAndFlush(any());
+        verify(reconciliationService, never()).requireHealthy(any());
+    }
+
+    @Test
+    void savedApplicationWithCompleteHealthyPairBecomesDocumentsGenerated() {
+        UUID id = UUID.randomUUID();
+        ApplicationRecord record = savedRecord(id);
+        setCurrentCv(record, reference(CV_ID, DocumentType.CV));
+        setCurrentCoverLetter(
+                record, reference(COVER_LETTER_ID, DocumentType.COVER_LETTER));
+        when(repository.findByIdAndUserId(id, "user-123"))
+                .thenReturn(Optional.of(record));
+        when(repository.saveAndFlush(record)).thenReturn(record);
+
+        ApplicationRecordResponse response = service.updateStatus(
+                "user-123",
+                id,
+                UpdateStatusRequest.builder()
+                        .status("DOCUMENTS_GENERATED")
+                        .build());
+
+        assertThat(response.getStatus())
+                .isEqualTo(ApplicationStatus.DOCUMENTS_GENERATED);
+        assertThat(response.getAppliedAt()).isNull();
+        assertThat(response.getApplicationUsedCvDocumentReference()).isNull();
+        verify(reconciliationService).requireHealthy(record);
+        verify(eventRecorder).recordStatusChanged(
+                eq(record),
+                eq(ApplicationStatus.SAVED),
+                any(),
+                any(ApplicationCommandActor.class),
+                any());
+    }
+
+    @Test
+    void savedApplicationCanBecomeAppliedWithoutDocuments() {
+        UUID id = UUID.randomUUID();
+        ApplicationRecord record = savedRecord(id);
+        when(repository.findByIdAndUserId(id, "user-123"))
+                .thenReturn(Optional.of(record));
+        when(repository.saveAndFlush(record)).thenReturn(record);
+
+        ApplicationRecordResponse response = service.updateStatus(
+                "user-123",
+                id,
+                UpdateStatusRequest.builder().status("APPLIED").build());
+
+        assertThat(response.getStatus()).isEqualTo(ApplicationStatus.APPLIED);
+        assertThat(response.getAppliedAt()).isNotNull();
+        assertThat(response.getApplicationUsedCvDocumentReference()).isNull();
+        verify(reconciliationService, never()).requireHealthy(any());
+    }
+
+    @Test
+    void savedApplicationCannotBecomeAppliedWithOnlyOneDocument() {
+        UUID id = UUID.randomUUID();
+        ApplicationRecord record = savedRecord(id);
+        setCurrentCv(record, reference(CV_ID, DocumentType.CV));
+        when(repository.findByIdAndUserId(id, "user-123"))
+                .thenReturn(Optional.of(record));
+
+        assertThatThrownBy(() -> service.updateStatus(
+                        "user-123",
+                        id,
+                        UpdateStatusRequest.builder().status("APPLIED").build()))
+                .isInstanceOf(
+                        com.jobseekercopilot.applicationtracker.exception
+                                .InvalidDocumentReferenceException.class);
+
+        assertThat(record.getStatus()).isEqualTo(ApplicationStatus.SAVED);
+        assertThat(record.getAppliedAt()).isNull();
+        verify(repository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void savedApplicationFreezesCompletePairWhenApplied() {
+        UUID id = UUID.randomUUID();
+        ApplicationRecord record = savedRecord(id);
+        setCurrentCv(record, reference(CV_ID, DocumentType.CV));
+        setCurrentCoverLetter(
+                record, reference(COVER_LETTER_ID, DocumentType.COVER_LETTER));
+        when(repository.findByIdAndUserId(id, "user-123"))
+                .thenReturn(Optional.of(record));
+        when(repository.saveAndFlush(record)).thenReturn(record);
+
+        ApplicationRecordResponse response = service.updateStatus(
+                "user-123",
+                id,
+                UpdateStatusRequest.builder().status("APPLIED").build());
+
+        assertThat(response.getStatus()).isEqualTo(ApplicationStatus.APPLIED);
+        assertThat(response.getAppliedAt()).isNotNull();
+        assertThat(response.getApplicationUsedAt())
+                .isEqualTo(response.getAppliedAt());
+        assertThat(response.getApplicationUsedCvDocumentReference().getDocumentId())
+                .isEqualTo(CV_ID);
+        assertThat(response
+                        .getApplicationUsedCoverLetterDocumentReference()
+                        .getDocumentId())
+                .isEqualTo(COVER_LETTER_ID);
+        verify(reconciliationService).requireHealthy(record);
+    }
+
+    @Test
     void frozenReferencesSurviveFurtherProgressionAndRejectReplacement() {
         UUID id = UUID.randomUUID();
         ApplicationRecord record = canonicalRecord(id);
@@ -576,6 +732,49 @@ class ApplicationRecordServiceTest {
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
+    }
+
+    private ApplicationRecord savedRecord(UUID id) {
+        return ApplicationRecord.builder()
+                .id(id)
+                .userId("user-123")
+                .jobId("job-456")
+                .canonicalJobId("canonical-job-456")
+                .provider("REED")
+                .externalJobId("reed-456")
+                .provenance(ApplicationProvenance.MANUAL)
+                .jobTitle("Java Developer")
+                .companyName("Example Ltd")
+                .status(ApplicationStatus.SAVED)
+                .createdAt(LocalDateTime.now().minusDays(1))
+                .updatedAt(LocalDateTime.now().minusDays(1))
+                .build();
+    }
+
+    private void setCurrentCv(
+            ApplicationRecord record, DocumentVersionReference reference) {
+        record.setCvDocumentId(reference.getDocumentId().toString());
+        record.setCvDocumentFamilyId(
+                reference.getDocumentFamilyId().toString());
+        record.setCvDocumentVersion(reference.getVersion());
+        record.setCvDocumentContentSha256(reference.getContentSha256());
+        record.setCvDocumentEvidenceProvenance(
+                reference.getEvidenceProvenance());
+        record.setCvDocumentGroundingState(reference.getGroundingState());
+    }
+
+    private void setCurrentCoverLetter(
+            ApplicationRecord record, DocumentVersionReference reference) {
+        record.setCoverLetterDocumentId(reference.getDocumentId().toString());
+        record.setCoverLetterDocumentFamilyId(
+                reference.getDocumentFamilyId().toString());
+        record.setCoverLetterDocumentVersion(reference.getVersion());
+        record.setCoverLetterDocumentContentSha256(
+                reference.getContentSha256());
+        record.setCoverLetterDocumentEvidenceProvenance(
+                reference.getEvidenceProvenance());
+        record.setCoverLetterDocumentGroundingState(
+                reference.getGroundingState());
     }
 
     private DocumentEvidenceProvenance provenance(

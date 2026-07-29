@@ -121,7 +121,7 @@ public class ApplicationDocumentReconciliationService {
 
     @Transactional(propagation = Propagation.MANDATORY, readOnly = true)
     public void requireHealthy(ApplicationRecord application) {
-        if (application.getProvenance() != ApplicationProvenance.GENERATED) {
+        if (!hasAnyReference(application)) {
             return;
         }
         ApplicationDocumentReconciliation reconciliation =
@@ -303,10 +303,11 @@ public class ApplicationDocumentReconciliationService {
     private List<StoredReference> references(ApplicationRecord application) {
         boolean generated =
                 application.getProvenance() == ApplicationProvenance.GENERATED;
-        boolean submittedGenerated =
-                generated
-                        && application.getStatus()
-                                != ApplicationStatus.DOCUMENTS_GENERATED;
+        boolean prepared =
+                application.getStatus()
+                        == ApplicationStatus.DOCUMENTS_GENERATED;
+        boolean currentPairRequired = generated || prepared;
+        boolean usedPairRequired = hasCompleteUsedPair(application);
         List<StoredReference> references = new ArrayList<>(4);
         references.add(new StoredReference(
                 ReferenceRole.CURRENT_CV,
@@ -314,29 +315,41 @@ public class ApplicationDocumentReconciliationService {
                 application.getCvDocumentFamilyId(),
                 application.getCvDocumentVersion(),
                 application.getCvDocumentContentSha256(),
-                generated));
+                currentPairRequired));
         references.add(new StoredReference(
                 ReferenceRole.CURRENT_COVER_LETTER,
                 application.getCoverLetterDocumentId(),
                 application.getCoverLetterDocumentFamilyId(),
                 application.getCoverLetterDocumentVersion(),
                 application.getCoverLetterDocumentContentSha256(),
-                generated));
+                currentPairRequired));
         references.add(new StoredReference(
                 ReferenceRole.USED_CV,
                 application.getApplicationUsedCvDocumentId(),
                 application.getApplicationUsedCvDocumentFamilyId(),
                 application.getApplicationUsedCvDocumentVersion(),
                 application.getApplicationUsedCvDocumentContentSha256(),
-                submittedGenerated));
+                usedPairRequired));
         references.add(new StoredReference(
                 ReferenceRole.USED_COVER_LETTER,
                 application.getApplicationUsedCoverLetterDocumentId(),
                 application.getApplicationUsedCoverLetterDocumentFamilyId(),
                 application.getApplicationUsedCoverLetterDocumentVersion(),
                 application.getApplicationUsedCoverLetterDocumentContentSha256(),
-                submittedGenerated));
+                usedPairRequired));
         return references;
+    }
+
+    private boolean hasAnyReference(ApplicationRecord application) {
+        return application.getCvDocumentId() != null
+                || application.getCoverLetterDocumentId() != null
+                || application.getApplicationUsedCvDocumentId() != null
+                || application.getApplicationUsedCoverLetterDocumentId() != null;
+    }
+
+    private boolean hasCompleteUsedPair(ApplicationRecord application) {
+        return application.getApplicationUsedCvDocumentId() != null
+                && application.getApplicationUsedCoverLetterDocumentId() != null;
     }
 
     private ApplicationDocumentReconciliation newReconciliation(
