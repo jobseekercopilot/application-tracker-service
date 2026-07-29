@@ -9,7 +9,7 @@
     "license" : {
       "name" : "Proprietary and confidential"
     },
-    "version" : "3.5.0"
+    "version" : "4.0.0"
   },
   "servers" : [ {
     "url" : "http://localhost:8088",
@@ -345,6 +345,16 @@
           "required" : true
         },
         "responses" : {
+          "404" : {
+            "description" : "Application record not found",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "400" : {
             "description" : "Invalid status value",
             "content" : {
@@ -371,16 +381,6 @@
               "application/json" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/ApplicationRecordResponse"
-                }
-              }
-            }
-          },
-          "404" : {
-            "description" : "Application record not found",
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -849,22 +849,22 @@
           }
         } ],
         "responses" : {
-          "200" : {
-            "description" : "Ordered activity page returned",
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ApplicationHistoryResponse"
-                }
-              }
-            }
-          },
           "404" : {
             "description" : "Application record not found",
             "content" : {
               "application/json" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200" : {
+            "description" : "Ordered activity page returned",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApplicationHistoryResponse"
                 }
               }
             }
@@ -993,16 +993,6 @@
           }
         } ],
         "responses" : {
-          "404" : {
-            "description" : "Bearer subject and requested owner do not match",
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
           "401" : {
             "description" : "Missing, invalid or ambiguous authentication",
             "content" : {
@@ -1013,12 +1003,12 @@
               }
             }
           },
-          "403" : {
-            "description" : "Authenticated identity lacks reader permission",
+          "404" : {
+            "description" : "Bearer subject and requested owner do not match",
             "content" : {
               "application/json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/SecurityErrorResponse"
+                  "$ref" : "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1032,6 +1022,16 @@
                   "items" : {
                     "$ref" : "#/components/schemas/ApplicationRecordResponse"
                   }
+                }
+              }
+            }
+          },
+          "403" : {
+            "description" : "Authenticated identity lacks reader permission",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SecurityErrorResponse"
                 }
               }
             }
@@ -1485,7 +1485,7 @@
             "type" : "array",
             "items" : {
               "type" : "string",
-              "enum" : [ "EMPLOYMENT", "EDUCATION", "CERTIFICATIONS", "PROJECTS", "SKILLS", "ACHIEVEMENTS", "VOLUNTEERING", "PUBLICATIONS", "OTHER" ]
+              "enum" : [ "EMPLOYMENT", "EDUCATION", "QUALIFICATION_TRAINING", "PROJECT", "VOLUNTEERING", "FREELANCE", "ACHIEVEMENT", "CAREER_BREAK", "OTHER" ]
             }
           },
           "claimLedger" : {
@@ -1558,7 +1558,7 @@
           },
           "category" : {
             "type" : "string",
-            "enum" : [ "EMPLOYMENT", "EDUCATION", "CERTIFICATIONS", "PROJECTS", "SKILLS", "ACHIEVEMENTS", "VOLUNTEERING", "PUBLICATIONS", "OTHER" ]
+            "enum" : [ "EMPLOYMENT", "EDUCATION", "QUALIFICATION_TRAINING", "PROJECT", "VOLUNTEERING", "FREELANCE", "ACHIEVEMENT", "CAREER_BREAK", "OTHER" ]
           },
           "contentDigest" : {
             "type" : "string"

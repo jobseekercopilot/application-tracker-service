@@ -9,6 +9,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.jobseekercopilot.applicationtracker.dto.DocumentType;
+import com.jobseekercopilot.applicationtracker.dto.EvidenceSection;
 import com.jobseekercopilot.applicationtracker.exception.DocumentReferenceUnavailableException;
 import com.jobseekercopilot.applicationtracker.exception.InvalidDocumentReferenceException;
 import java.util.UUID;
@@ -58,8 +59,11 @@ class HttpDocumentReferenceVerifierTest {
         assertThat(reference.getEvidenceProvenance()
                         .evidenceRevisions())
                 .singleElement()
-                .extracting(revision -> revision.revisionNumber())
-                .isEqualTo(4);
+                .satisfies(revision -> {
+                    assertThat(revision.revisionNumber()).isEqualTo(4);
+                    assertThat(revision.category()).isEqualTo(
+                            EvidenceSection.PROJECT);
+                });
         assertThat(reference.getEvidenceProvenance()
                         .claimLedger()
                         .ledgerSha256())
@@ -125,10 +129,10 @@ class HttpDocumentReferenceVerifierTest {
                       "entryId": "44444444-4444-4444-8444-444444444444",
                       "revisionId": "55555555-5555-4555-8555-555555555555",
                       "revisionNumber": 4,
-                      "category": "EMPLOYMENT",
+                      "category": "PROJECT",
                       "contentDigest": "%s"
                     }],
-                    "sectionOrder": ["EMPLOYMENT"],
+                    "sectionOrder": ["PROJECT"],
                     "claimLedger": {
                       "ledgerId": "66666666-6666-4666-8666-666666666666",
                       "ledgerSha256": "%s",
