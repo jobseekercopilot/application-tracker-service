@@ -227,6 +227,9 @@ public class ApplicationCreationService {
         record.setCvDocumentFamilyId(reference.getDocumentFamilyId().toString());
         record.setCvDocumentVersion(reference.getVersion());
         record.setCvDocumentContentSha256(reference.getContentSha256());
+        record.setCvDocumentEvidenceProvenance(
+                reference.getEvidenceProvenance());
+        record.setCvDocumentGroundingState(reference.getGroundingState());
     }
 
     private void setCurrentCoverLetterReference(
@@ -239,6 +242,10 @@ public class ApplicationCreationService {
                 reference.getDocumentFamilyId().toString());
         record.setCoverLetterDocumentVersion(reference.getVersion());
         record.setCoverLetterDocumentContentSha256(reference.getContentSha256());
+        record.setCoverLetterDocumentEvidenceProvenance(
+                reference.getEvidenceProvenance());
+        record.setCoverLetterDocumentGroundingState(
+                reference.getGroundingState());
     }
 
     private void freezePresentReferences(
@@ -254,6 +261,10 @@ public class ApplicationCreationService {
             record.setApplicationUsedCvDocumentVersion(cvReference.getVersion());
             record.setApplicationUsedCvDocumentContentSha256(
                     cvReference.getContentSha256());
+            record.setApplicationUsedCvEvidenceProvenance(
+                    cvReference.getEvidenceProvenance());
+            record.setApplicationUsedCvGroundingState(
+                    cvReference.getGroundingState());
         }
         if (coverLetterReference != null) {
             record.setApplicationUsedCoverLetterDocumentId(
@@ -264,6 +275,10 @@ public class ApplicationCreationService {
                     coverLetterReference.getVersion());
             record.setApplicationUsedCoverLetterDocumentContentSha256(
                     coverLetterReference.getContentSha256());
+            record.setApplicationUsedCoverLetterEvidenceProvenance(
+                    coverLetterReference.getEvidenceProvenance());
+            record.setApplicationUsedCoverLetterGroundingState(
+                    coverLetterReference.getGroundingState());
         }
         if (cvReference != null || coverLetterReference != null) {
             record.setApplicationUsedAt(appliedAt);

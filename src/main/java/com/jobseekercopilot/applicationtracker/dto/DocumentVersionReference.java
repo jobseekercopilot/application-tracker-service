@@ -19,4 +19,8 @@ public class DocumentVersionReference {
     private DocumentType documentType;
     private Integer version;
     private String contentSha256;
+    private DocumentEvidenceProvenance evidenceProvenance;
+    private DocumentGroundingState groundingState;
+    private UUID parentDocumentId;
+    private Integer parentDocumentVersion;
 }

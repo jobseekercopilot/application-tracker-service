@@ -352,6 +352,10 @@ public class ApplicationReplacementWorkflowService {
             application.setCvDocumentVersion(reference.getVersion());
             application.setCvDocumentContentSha256(
                     reference.getContentSha256());
+            application.setCvDocumentEvidenceProvenance(
+                    reference.getEvidenceProvenance());
+            application.setCvDocumentGroundingState(
+                    reference.getGroundingState());
         } else {
             application.setCoverLetterDocumentId(
                     reference.getDocumentId().toString());
@@ -360,6 +364,10 @@ public class ApplicationReplacementWorkflowService {
             application.setCoverLetterDocumentVersion(reference.getVersion());
             application.setCoverLetterDocumentContentSha256(
                     reference.getContentSha256());
+            application.setCoverLetterDocumentEvidenceProvenance(
+                    reference.getEvidenceProvenance());
+            application.setCoverLetterDocumentGroundingState(
+                    reference.getGroundingState());
         }
     }
 

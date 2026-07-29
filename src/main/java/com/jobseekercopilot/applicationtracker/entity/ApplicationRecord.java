@@ -1,6 +1,9 @@
 package com.jobseekercopilot.applicationtracker.entity;
 
+import com.jobseekercopilot.applicationtracker.dto.DocumentEvidenceProvenance;
+import com.jobseekercopilot.applicationtracker.dto.DocumentGroundingState;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -74,6 +77,14 @@ public class ApplicationRecord {
     @Column(length = 64)
     private String cvDocumentContentSha256;
 
+    @Convert(converter = DocumentEvidenceProvenanceConverter.class)
+    @Column(columnDefinition = "TEXT")
+    private DocumentEvidenceProvenance cvDocumentEvidenceProvenance;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 48)
+    private DocumentGroundingState cvDocumentGroundingState;
+
     private String coverLetterDocumentId;
 
     private String coverLetterDocumentFamilyId;
@@ -82,6 +93,14 @@ public class ApplicationRecord {
 
     @Column(length = 64)
     private String coverLetterDocumentContentSha256;
+
+    @Convert(converter = DocumentEvidenceProvenanceConverter.class)
+    @Column(columnDefinition = "TEXT")
+    private DocumentEvidenceProvenance coverLetterDocumentEvidenceProvenance;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 48)
+    private DocumentGroundingState coverLetterDocumentGroundingState;
 
     private String applicationUsedCvDocumentId;
 
@@ -92,6 +111,14 @@ public class ApplicationRecord {
     @Column(length = 64)
     private String applicationUsedCvDocumentContentSha256;
 
+    @Convert(converter = DocumentEvidenceProvenanceConverter.class)
+    @Column(columnDefinition = "TEXT")
+    private DocumentEvidenceProvenance applicationUsedCvEvidenceProvenance;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 48)
+    private DocumentGroundingState applicationUsedCvGroundingState;
+
     private String applicationUsedCoverLetterDocumentId;
 
     private String applicationUsedCoverLetterDocumentFamilyId;
@@ -100,6 +127,15 @@ public class ApplicationRecord {
 
     @Column(length = 64)
     private String applicationUsedCoverLetterDocumentContentSha256;
+
+    @Convert(converter = DocumentEvidenceProvenanceConverter.class)
+    @Column(columnDefinition = "TEXT")
+    private DocumentEvidenceProvenance
+            applicationUsedCoverLetterEvidenceProvenance;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 48)
+    private DocumentGroundingState applicationUsedCoverLetterGroundingState;
 
     private LocalDateTime applicationUsedAt;
 

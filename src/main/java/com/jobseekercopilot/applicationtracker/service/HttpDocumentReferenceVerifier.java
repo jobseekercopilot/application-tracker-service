@@ -1,6 +1,8 @@
 package com.jobseekercopilot.applicationtracker.service;
 
 import com.jobseekercopilot.applicationtracker.dto.DocumentType;
+import com.jobseekercopilot.applicationtracker.dto.DocumentEvidenceProvenance;
+import com.jobseekercopilot.applicationtracker.dto.DocumentGroundingState;
 import com.jobseekercopilot.applicationtracker.dto.DocumentVersionReference;
 import com.jobseekercopilot.applicationtracker.exception.DocumentReferenceUnavailableException;
 import com.jobseekercopilot.applicationtracker.exception.InvalidDocumentReferenceException;
@@ -88,6 +90,11 @@ public class HttpDocumentReferenceVerifier implements DocumentReferenceVerifier 
                     .documentType(reference.getDocumentType())
                     .version(reference.getVersion())
                     .contentSha256(reference.getContentSha256())
+                    .evidenceProvenance(reference.getEvidenceProvenance())
+                    .groundingState(reference.getGroundingState())
+                    .parentDocumentId(reference.getParentDocumentId())
+                    .parentDocumentVersion(
+                            reference.getParentDocumentVersion())
                     .build();
         } catch (HttpClientErrorException exception) {
             throw new InvalidDocumentReferenceException();
@@ -112,7 +119,38 @@ public class HttpDocumentReferenceVerifier implements DocumentReferenceVerifier 
                 && reference.getVersion() >= 1
                 && reference.getContentSha256() != null
                 && SHA_256.matcher(reference.getContentSha256()).matches()
-                && "APPROVED".equals(reference.getLifecycleState());
+                && "APPROVED".equals(reference.getLifecycleState())
+                && validProvenance(reference);
+    }
+
+    private boolean validProvenance(
+            DocumentStoreReferenceResponse reference) {
+        DocumentEvidenceProvenance provenance =
+                reference.getEvidenceProvenance();
+        if (provenance == null) {
+            return reference.getGroundingState() == null
+                    || reference.getGroundingState()
+                    == DocumentGroundingState.LEGACY_UNSPECIFIED
+                    || reference.getGroundingState()
+                    == DocumentGroundingState.USER_EDITED_REVIEW_REQUIRED;
+        }
+        return provenance.profileRevisionId() != null
+                && sha256(provenance.profileContentDigest())
+                && provenance.evidenceSnapshotId() != null
+                && sha256(provenance.evidenceSnapshotDigest())
+                && provenance.evidenceRevisions() != null
+                && !provenance.evidenceRevisions().isEmpty()
+                && provenance.sectionOrder() != null
+                && !provenance.sectionOrder().isEmpty()
+                && provenance.claimLedger() != null
+                && provenance.claimLedger().ledgerId() != null
+                && sha256(provenance.claimLedger().ledgerSha256())
+                && provenance.generatedAt() != null
+                && reference.getGroundingState() != null;
+    }
+
+    private boolean sha256(String value) {
+        return value != null && SHA_256.matcher(value).matches();
     }
 
     private static String stripTrailingSlash(String value) {
@@ -132,5 +170,9 @@ public class HttpDocumentReferenceVerifier implements DocumentReferenceVerifier 
         private Integer version;
         private String contentSha256;
         private String lifecycleState;
+        private DocumentEvidenceProvenance evidenceProvenance;
+        private DocumentGroundingState groundingState;
+        private UUID parentDocumentId;
+        private Integer parentDocumentVersion;
     }
 }

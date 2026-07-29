@@ -4,7 +4,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jobseekercopilot.applicationtracker.TestJwksServer;
 import com.jobseekercopilot.applicationtracker.dto.CreateApplicationRequest;
 import com.jobseekercopilot.applicationtracker.dto.DocumentType;
+import com.jobseekercopilot.applicationtracker.dto.DocumentEvidenceProvenance;
+import com.jobseekercopilot.applicationtracker.dto.DocumentGroundingState;
 import com.jobseekercopilot.applicationtracker.dto.DocumentVersionReference;
+import com.jobseekercopilot.applicationtracker.dto.EvidenceRevisionReference;
+import com.jobseekercopilot.applicationtracker.dto.EvidenceSection;
+import com.jobseekercopilot.applicationtracker.dto.ValidatedClaimLedger;
 import com.jobseekercopilot.applicationtracker.dto.UpdateStatusRequest;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationDocumentReconciliation;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationRecord;
@@ -37,7 +42,9 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -146,6 +153,12 @@ class ApplicationRecordControllerIntegrationTest {
                 .andExpect(jsonPath("$.jobTitle").value("Java Developer"))
                 .andExpect(jsonPath("$.companyName").value("Example Ltd"))
                 .andExpect(jsonPath("$.status").value("DOCUMENTS_GENERATED"))
+                .andExpect(jsonPath(
+                                "$.cvDocumentReference.evidenceProvenance.profileRevisionId")
+                        .value("33333333-3333-4333-8333-333333333333"))
+                .andExpect(jsonPath(
+                                "$.coverLetterDocumentReference.evidenceProvenance.evidenceSnapshotId")
+                        .value("44444444-4444-4444-8444-444444444444"))
                 .andExpect(jsonPath("$.id").isNotEmpty());
     }
 
@@ -1182,7 +1195,38 @@ class ApplicationRecordControllerIntegrationTest {
                 .version(1)
                 .contentSha256(
                         type == DocumentType.CV ? "a".repeat(64) : "b".repeat(64))
+                .evidenceProvenance(provenance())
+                .groundingState(
+                        DocumentGroundingState
+                                .AI_GENERATED_EVIDENCE_VALIDATED)
                 .build();
+    }
+
+    private DocumentEvidenceProvenance provenance() {
+        UUID evidenceId =
+                UUID.fromString("55555555-5555-4555-8555-555555555555");
+        return new DocumentEvidenceProvenance(
+                UUID.fromString(
+                        "33333333-3333-4333-8333-333333333333"),
+                "c".repeat(64),
+                UUID.fromString(
+                        "44444444-4444-4444-8444-444444444444"),
+                "d".repeat(64),
+                List.of(new EvidenceRevisionReference(
+                        evidenceId,
+                        UUID.fromString(
+                                "66666666-6666-4666-8666-666666666666"),
+                        2,
+                        EvidenceSection.EMPLOYMENT,
+                        "e".repeat(64))),
+                List.of(EvidenceSection.EMPLOYMENT),
+                new ValidatedClaimLedger(
+                        UUID.fromString(
+                                "99999999-9999-4999-8999-999999999999"),
+                        "f".repeat(64),
+                        "2.0.0",
+                        "3.0.0"),
+                OffsetDateTime.parse("2026-07-29T03:00:00Z"));
     }
 
     private CreateApplicationRequest validRequest() {

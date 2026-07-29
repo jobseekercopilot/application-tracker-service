@@ -2,6 +2,8 @@ package com.jobseekercopilot.applicationtracker.service;
 
 import com.jobseekercopilot.applicationtracker.dto.ApplicationRecordResponse;
 import com.jobseekercopilot.applicationtracker.dto.CreateApplicationRequest;
+import com.jobseekercopilot.applicationtracker.dto.DocumentEvidenceProvenance;
+import com.jobseekercopilot.applicationtracker.dto.DocumentGroundingState;
 import com.jobseekercopilot.applicationtracker.dto.DocumentType;
 import com.jobseekercopilot.applicationtracker.dto.DocumentVersionReference;
 import com.jobseekercopilot.applicationtracker.dto.UpdateStatusRequest;
@@ -327,6 +329,9 @@ public class ApplicationRecordService {
                 cv.getDocumentFamilyId().toString());
         record.setApplicationUsedCvDocumentVersion(cv.getVersion());
         record.setApplicationUsedCvDocumentContentSha256(cv.getContentSha256());
+        record.setApplicationUsedCvEvidenceProvenance(
+                cv.getEvidenceProvenance());
+        record.setApplicationUsedCvGroundingState(cv.getGroundingState());
         record.setApplicationUsedCoverLetterDocumentId(
                 coverLetter.getDocumentId().toString());
         record.setApplicationUsedCoverLetterDocumentFamilyId(
@@ -335,6 +340,10 @@ public class ApplicationRecordService {
                 coverLetter.getVersion());
         record.setApplicationUsedCoverLetterDocumentContentSha256(
                 coverLetter.getContentSha256());
+        record.setApplicationUsedCoverLetterEvidenceProvenance(
+                coverLetter.getEvidenceProvenance());
+        record.setApplicationUsedCoverLetterGroundingState(
+                coverLetter.getGroundingState());
         record.setApplicationUsedAt(occurredAt);
     }
 
@@ -369,6 +378,9 @@ public class ApplicationRecordService {
         record.setCvDocumentFamilyId(reference.getDocumentFamilyId().toString());
         record.setCvDocumentVersion(reference.getVersion());
         record.setCvDocumentContentSha256(reference.getContentSha256());
+        record.setCvDocumentEvidenceProvenance(
+                reference.getEvidenceProvenance());
+        record.setCvDocumentGroundingState(reference.getGroundingState());
     }
 
     private void setCurrentCoverLetterReference(
@@ -378,6 +390,10 @@ public class ApplicationRecordService {
                 reference.getDocumentFamilyId().toString());
         record.setCoverLetterDocumentVersion(reference.getVersion());
         record.setCoverLetterDocumentContentSha256(reference.getContentSha256());
+        record.setCoverLetterDocumentEvidenceProvenance(
+                reference.getEvidenceProvenance());
+        record.setCoverLetterDocumentGroundingState(
+                reference.getGroundingState());
     }
 
     private DocumentVersionReference currentCvReference(ApplicationRecord record) {
@@ -387,7 +403,9 @@ public class ApplicationRecordService {
                 record.getJobId(),
                 DocumentType.CV,
                 record.getCvDocumentVersion(),
-                record.getCvDocumentContentSha256());
+                record.getCvDocumentContentSha256(),
+                record.getCvDocumentEvidenceProvenance(),
+                record.getCvDocumentGroundingState());
     }
 
     private DocumentVersionReference currentCoverLetterReference(
@@ -398,7 +416,9 @@ public class ApplicationRecordService {
                 record.getJobId(),
                 DocumentType.COVER_LETTER,
                 record.getCoverLetterDocumentVersion(),
-                record.getCoverLetterDocumentContentSha256());
+                record.getCoverLetterDocumentContentSha256(),
+                record.getCoverLetterDocumentEvidenceProvenance(),
+                record.getCoverLetterDocumentGroundingState());
     }
 
     private DocumentVersionReference applicationUsedCvReference(
@@ -409,7 +429,9 @@ public class ApplicationRecordService {
                 record.getJobId(),
                 DocumentType.CV,
                 record.getApplicationUsedCvDocumentVersion(),
-                record.getApplicationUsedCvDocumentContentSha256());
+                record.getApplicationUsedCvDocumentContentSha256(),
+                record.getApplicationUsedCvEvidenceProvenance(),
+                record.getApplicationUsedCvGroundingState());
     }
 
     private DocumentVersionReference applicationUsedCoverLetterReference(
@@ -420,7 +442,9 @@ public class ApplicationRecordService {
                 record.getJobId(),
                 DocumentType.COVER_LETTER,
                 record.getApplicationUsedCoverLetterDocumentVersion(),
-                record.getApplicationUsedCoverLetterDocumentContentSha256());
+                record.getApplicationUsedCoverLetterDocumentContentSha256(),
+                record.getApplicationUsedCoverLetterEvidenceProvenance(),
+                record.getApplicationUsedCoverLetterGroundingState());
     }
 
     private DocumentVersionReference reference(
@@ -429,7 +453,9 @@ public class ApplicationRecordService {
             String jobId,
             DocumentType type,
             Integer version,
-            String sha256) {
+            String sha256,
+            DocumentEvidenceProvenance evidenceProvenance,
+            DocumentGroundingState groundingState) {
         if (documentId == null
                 || familyId == null
                 || version == null
@@ -444,6 +470,8 @@ public class ApplicationRecordService {
                     .documentType(type)
                     .version(version)
                     .contentSha256(sha256)
+                    .evidenceProvenance(evidenceProvenance)
+                    .groundingState(groundingState)
                     .build();
         } catch (IllegalArgumentException exception) {
             return null;

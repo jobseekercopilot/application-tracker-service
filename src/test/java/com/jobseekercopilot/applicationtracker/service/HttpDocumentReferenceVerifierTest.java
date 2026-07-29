@@ -47,6 +47,23 @@ class HttpDocumentReferenceVerifierTest {
         assertThat(reference.getDocumentFamilyId()).isEqualTo(FAMILY_ID);
         assertThat(reference.getVersion()).isEqualTo(3);
         assertThat(reference.getContentSha256()).isEqualTo("a".repeat(64));
+        assertThat(reference.getGroundingState().name())
+                .isEqualTo("AI_GENERATED_EVIDENCE_VALIDATED");
+        assertThat(reference.getEvidenceProvenance().profileRevisionId())
+                .isEqualTo(UUID.fromString(
+                        "22222222-2222-4222-8222-222222222222"));
+        assertThat(reference.getEvidenceProvenance().evidenceSnapshotId())
+                .isEqualTo(UUID.fromString(
+                        "33333333-3333-4333-8333-333333333333"));
+        assertThat(reference.getEvidenceProvenance()
+                        .evidenceRevisions())
+                .singleElement()
+                .extracting(revision -> revision.revisionNumber())
+                .isEqualTo(4);
+        assertThat(reference.getEvidenceProvenance()
+                        .claimLedger()
+                        .ledgerSha256())
+                .isEqualTo("e".repeat(64));
         server.verify();
     }
 
@@ -97,13 +114,46 @@ class HttpDocumentReferenceVerifierTest {
                   "documentType": "%s",
                   "version": 3,
                   "contentSha256": "%s",
-                  "lifecycleState": "%s"
+                  "lifecycleState": "%s",
+                  "groundingState": "AI_GENERATED_EVIDENCE_VALIDATED",
+                  "evidenceProvenance": {
+                    "profileRevisionId": "22222222-2222-4222-8222-222222222222",
+                    "profileContentDigest": "%s",
+                    "evidenceSnapshotId": "33333333-3333-4333-8333-333333333333",
+                    "evidenceSnapshotDigest": "%s",
+                    "evidenceRevisions": [{
+                      "entryId": "44444444-4444-4444-8444-444444444444",
+                      "revisionId": "55555555-5555-4555-8555-555555555555",
+                      "revisionNumber": 4,
+                      "category": "EMPLOYMENT",
+                      "contentDigest": "%s"
+                    }],
+                    "sectionOrder": ["EMPLOYMENT"],
+                    "claimLedger": {
+                      "ledgerId": "66666666-6666-4666-8666-666666666666",
+                      "ledgerSha256": "%s",
+                      "policyVersion": "2.0.0",
+                      "parserVersion": "3.0.0",
+                      "claims": [{
+                        "claimId": "CLAIM-001",
+                        "disposition": "SUPPORTED",
+                        "evidenceIds": ["44444444-4444-4444-8444-444444444444"],
+                        "contentPaths": ["experience[0].summary"],
+                        "reviewText": "Grounded summary"
+                      }]
+                    },
+                    "generatedAt": "2026-07-29T03:00:00Z"
+                  }
                 }
                 """.formatted(
                 DOCUMENT_ID,
                 FAMILY_ID,
                 documentType,
                 "a".repeat(64),
-                lifecycleState);
+                lifecycleState,
+                "b".repeat(64),
+                "c".repeat(64),
+                "d".repeat(64),
+                "e".repeat(64));
     }
 }

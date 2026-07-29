@@ -9,7 +9,7 @@
     "license" : {
       "name" : "Proprietary and confidential"
     },
-    "version" : "3.4.0"
+    "version" : "3.5.0"
   },
   "servers" : [ {
     "url" : "http://localhost:8088",
@@ -345,8 +345,18 @@
           "required" : true
         },
         "responses" : {
-          "404" : {
-            "description" : "Application record not found",
+          "400" : {
+            "description" : "Invalid status value",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409" : {
+            "description" : "Invalid lifecycle transition or stale/concurrent record version",
             "content" : {
               "application/json" : {
                 "schema" : {
@@ -365,18 +375,8 @@
               }
             }
           },
-          "400" : {
-            "description" : "Invalid status value",
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409" : {
-            "description" : "Invalid lifecycle transition or stale/concurrent record version",
+          "404" : {
+            "description" : "Application record not found",
             "content" : {
               "application/json" : {
                 "schema" : {
@@ -849,22 +849,22 @@
           }
         } ],
         "responses" : {
-          "404" : {
-            "description" : "Application record not found",
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
           "200" : {
             "description" : "Ordered activity page returned",
             "content" : {
               "application/json" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/ApplicationHistoryResponse"
+                }
+              }
+            }
+          },
+          "404" : {
+            "description" : "Application record not found",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -950,22 +950,22 @@
           }
         } ],
         "responses" : {
-          "404" : {
-            "description" : "Application record not found",
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
           "200" : {
             "description" : "Owner-scoped reconciliation state returned",
             "content" : {
               "application/json" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/DocumentReferenceReconciliationResponse"
+                }
+              }
+            }
+          },
+          "404" : {
+            "description" : "Application record not found",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -993,6 +993,16 @@
           }
         } ],
         "responses" : {
+          "404" : {
+            "description" : "Bearer subject and requested owner do not match",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "401" : {
             "description" : "Missing, invalid or ambiguous authentication",
             "content" : {
@@ -1009,16 +1019,6 @@
               "application/json" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/SecurityErrorResponse"
-                }
-              }
-            }
-          },
-          "404" : {
-            "description" : "Bearer subject and requested owner do not match",
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1458,6 +1458,46 @@
         },
         "description" : "Response containing application record details"
       },
+      "DocumentEvidenceProvenance" : {
+        "type" : "object",
+        "properties" : {
+          "profileRevisionId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "profileContentDigest" : {
+            "type" : "string"
+          },
+          "evidenceSnapshotId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "evidenceSnapshotDigest" : {
+            "type" : "string"
+          },
+          "evidenceRevisions" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/EvidenceRevisionReference"
+            }
+          },
+          "sectionOrder" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string",
+              "enum" : [ "EMPLOYMENT", "EDUCATION", "CERTIFICATIONS", "PROJECTS", "SKILLS", "ACHIEVEMENTS", "VOLUNTEERING", "PUBLICATIONS", "OTHER" ]
+            }
+          },
+          "claimLedger" : {
+            "$ref" : "#/components/schemas/ValidatedClaimLedger"
+          },
+          "generatedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          }
+        },
+        "description" : "Immutable profile, evidence-snapshot and claim provenance\nretained with an exact document version.\n"
+      },
       "DocumentVersionReference" : {
         "type" : "object",
         "properties" : {
@@ -1482,9 +1522,68 @@
           },
           "contentSha256" : {
             "type" : "string"
+          },
+          "evidenceProvenance" : {
+            "$ref" : "#/components/schemas/DocumentEvidenceProvenance"
+          },
+          "groundingState" : {
+            "type" : "string",
+            "enum" : [ "AI_GENERATED_EVIDENCE_VALIDATED", "USER_EDITED_REVIEW_REQUIRED", "USER_EDITED_REVALIDATED", "LEGACY_UNSPECIFIED" ]
+          },
+          "parentDocumentId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "parentDocumentVersion" : {
+            "type" : "integer",
+            "format" : "int32"
           }
         },
         "description" : "Canonical immutable Document Store version descriptor"
+      },
+      "EvidenceRevisionReference" : {
+        "type" : "object",
+        "properties" : {
+          "entryId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "revisionId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "revisionNumber" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "category" : {
+            "type" : "string",
+            "enum" : [ "EMPLOYMENT", "EDUCATION", "CERTIFICATIONS", "PROJECTS", "SKILLS", "ACHIEVEMENTS", "VOLUNTEERING", "PUBLICATIONS", "OTHER" ]
+          },
+          "contentDigest" : {
+            "type" : "string"
+          }
+        },
+        "description" : "Exact immutable evidence revision selected for a document"
+      },
+      "ValidatedClaimLedger" : {
+        "type" : "object",
+        "properties" : {
+          "ledgerId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "ledgerSha256" : {
+            "type" : "string"
+          },
+          "policyVersion" : {
+            "type" : "string"
+          },
+          "parserVersion" : {
+            "type" : "string"
+          }
+        },
+        "description" : "Non-sensitive identity and digest of the exact claim ledger\naccepted by generation validation.\n"
       },
       "WithdrawGeneratedApplicationResponse" : {
         "type" : "object",

@@ -3,7 +3,12 @@ package com.jobseekercopilot.applicationtracker.service;
 import com.jobseekercopilot.applicationtracker.dto.ApplicationRecordResponse;
 import com.jobseekercopilot.applicationtracker.dto.CreateApplicationRequest;
 import com.jobseekercopilot.applicationtracker.dto.DocumentType;
+import com.jobseekercopilot.applicationtracker.dto.DocumentEvidenceProvenance;
+import com.jobseekercopilot.applicationtracker.dto.DocumentGroundingState;
 import com.jobseekercopilot.applicationtracker.dto.DocumentVersionReference;
+import com.jobseekercopilot.applicationtracker.dto.EvidenceRevisionReference;
+import com.jobseekercopilot.applicationtracker.dto.EvidenceSection;
+import com.jobseekercopilot.applicationtracker.dto.ValidatedClaimLedger;
 import com.jobseekercopilot.applicationtracker.dto.UpdateStatusRequest;
 import com.jobseekercopilot.applicationtracker.dto.UpdateDocumentReferenceRequest;
 import com.jobseekercopilot.applicationtracker.dto.WithdrawGeneratedApplicationResponse;
@@ -20,6 +25,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -59,6 +65,10 @@ class ApplicationRecordServiceTest {
             UUID.fromString("11111111-1111-4111-8111-111111111111");
     private static final UUID COVER_LETTER_ID =
             UUID.fromString("22222222-2222-4222-8222-222222222222");
+    private static final UUID PROFILE_REVISION_ID =
+            UUID.fromString("33333333-3333-4333-8333-333333333333");
+    private static final UUID EVIDENCE_SNAPSHOT_ID =
+            UUID.fromString("44444444-4444-4444-8444-444444444444");
 
     @BeforeEach
     void setUp() {
@@ -390,6 +400,12 @@ class ApplicationRecordServiceTest {
                 "user-123",
                 id,
                 UpdateStatusRequest.builder().status("APPLIED").build());
+        DocumentEvidenceProvenance usedProvenance =
+                record.getApplicationUsedCvEvidenceProvenance();
+        DocumentEvidenceProvenance laterCurrentProvenance = provenance(
+                UUID.fromString("77777777-7777-4777-8777-777777777777"),
+                UUID.fromString("88888888-8888-4888-8888-888888888888"));
+        record.setCvDocumentEvidenceProvenance(laterCurrentProvenance);
         ApplicationRecordResponse progressed = service.updateStatus(
                 "user-123",
                 id,
@@ -397,6 +413,21 @@ class ApplicationRecordServiceTest {
 
         assertThat(progressed.getApplicationUsedCvDocumentReference().getDocumentId())
                 .isEqualTo(CV_ID);
+        assertThat(progressed.getCvDocumentReference()
+                        .getEvidenceProvenance()
+                        .profileRevisionId())
+                .isEqualTo(laterCurrentProvenance.profileRevisionId());
+        assertThat(progressed.getApplicationUsedCvDocumentReference()
+                        .getEvidenceProvenance())
+                .isEqualTo(usedProvenance);
+        assertThat(progressed.getApplicationUsedCvDocumentReference()
+                        .getEvidenceProvenance()
+                        .profileRevisionId())
+                .isEqualTo(PROFILE_REVISION_ID);
+        assertThat(progressed.getApplicationUsedCvDocumentReference()
+                        .getEvidenceProvenance()
+                        .evidenceSnapshotId())
+                .isEqualTo(EVIDENCE_SNAPSHOT_ID);
         assertThatThrownBy(() -> service.updateDocumentReference(
                         "user-123",
                         id,
@@ -508,6 +539,11 @@ class ApplicationRecordServiceTest {
                 .version(1)
                 .contentSha256(
                         type == DocumentType.CV ? "a".repeat(64) : "b".repeat(64))
+                .evidenceProvenance(
+                        provenance(PROFILE_REVISION_ID, EVIDENCE_SNAPSHOT_ID))
+                .groundingState(
+                        DocumentGroundingState
+                                .AI_GENERATED_EVIDENCE_VALIDATED)
                 .build();
     }
 
@@ -522,13 +558,49 @@ class ApplicationRecordServiceTest {
                 .cvDocumentFamilyId(CV_ID.toString())
                 .cvDocumentVersion(1)
                 .cvDocumentContentSha256("a".repeat(64))
+                .cvDocumentEvidenceProvenance(
+                        provenance(PROFILE_REVISION_ID, EVIDENCE_SNAPSHOT_ID))
+                .cvDocumentGroundingState(
+                        DocumentGroundingState
+                                .AI_GENERATED_EVIDENCE_VALIDATED)
                 .coverLetterDocumentId(COVER_LETTER_ID.toString())
                 .coverLetterDocumentFamilyId(COVER_LETTER_ID.toString())
                 .coverLetterDocumentVersion(1)
                 .coverLetterDocumentContentSha256("b".repeat(64))
+                .coverLetterDocumentEvidenceProvenance(
+                        provenance(PROFILE_REVISION_ID, EVIDENCE_SNAPSHOT_ID))
+                .coverLetterDocumentGroundingState(
+                        DocumentGroundingState
+                                .AI_GENERATED_EVIDENCE_VALIDATED)
                 .status(ApplicationStatus.DOCUMENTS_GENERATED)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
+    }
+
+    private DocumentEvidenceProvenance provenance(
+            UUID profileRevisionId, UUID snapshotId) {
+        UUID evidenceId =
+                UUID.fromString("55555555-5555-4555-8555-555555555555");
+        return new DocumentEvidenceProvenance(
+                profileRevisionId,
+                "c".repeat(64),
+                snapshotId,
+                "d".repeat(64),
+                List.of(new EvidenceRevisionReference(
+                        evidenceId,
+                        UUID.fromString(
+                                "66666666-6666-4666-8666-666666666666"),
+                        2,
+                        EvidenceSection.EMPLOYMENT,
+                        "e".repeat(64))),
+                List.of(EvidenceSection.EMPLOYMENT),
+                new ValidatedClaimLedger(
+                        UUID.fromString(
+                                "99999999-9999-4999-8999-999999999999"),
+                        "f".repeat(64),
+                        "2.0.0",
+                        "3.0.0"),
+                OffsetDateTime.parse("2026-07-29T03:00:00Z"));
     }
 }
