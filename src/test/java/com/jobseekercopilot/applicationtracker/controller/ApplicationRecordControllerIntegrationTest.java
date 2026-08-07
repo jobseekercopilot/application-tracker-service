@@ -12,6 +12,7 @@ import com.jobseekercopilot.applicationtracker.dto.EvidenceSection;
 import com.jobseekercopilot.applicationtracker.dto.ValidatedClaimLedger;
 import com.jobseekercopilot.applicationtracker.dto.UpdateStatusRequest;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationDocumentReconciliation;
+import com.jobseekercopilot.applicationtracker.entity.ApplicationEventType;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationRecord;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationProvenance;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationStatus;
@@ -205,6 +206,45 @@ class ApplicationRecordControllerIntegrationTest {
         assertThat(repository.findById(application.getId()).orElseThrow()
                         .getStatus())
                 .isEqualTo(ApplicationStatus.SAVED);
+        assertThat(eventRepository.findByUserIdOrderByOccurredAtAscRecordedAtAscIdAsc(
+                                "selection-owner")
+                        .stream()
+                        .map(event -> event.getEventType()))
+                .containsExactly(
+                        ApplicationEventType.APPLICATION_DOCUMENT_SELECTED,
+                        ApplicationEventType.APPLICATION_DOCUMENT_SELECTION_CHANGED,
+                        ApplicationEventType.APPLICATION_DOCUMENT_SELECTION_CHANGED,
+                        ApplicationEventType.APPLICATION_DOCUMENT_SELECTION_CHANGED);
+    }
+
+    @Test
+    void firstExplicitOmissionIsRecordedOnceAndLaterNoOpIsSilent()
+            throws Exception {
+        ApplicationRecord application = savedApplication("omission-owner");
+
+        saveSelections(
+                application,
+                "omission-owner",
+                "initial-omission",
+                0,
+                omitted(),
+                omitted());
+        saveSelections(
+                application,
+                "omission-owner",
+                "same-omission-new-command",
+                0,
+                omitted(),
+                omitted());
+
+        var events = eventRepository
+                .findByUserIdOrderByOccurredAtAscRecordedAtAscIdAsc(
+                        "omission-owner");
+        assertThat(events).hasSize(1);
+        assertThat(events.get(0).getEventType())
+                .isEqualTo(ApplicationEventType.APPLICATION_DOCUMENT_SELECTED);
+        assertThat(events.get(0).getReason())
+                .isEqualTo("Atomic application document selections saved: CV remains omitted; cover letter remains omitted.");
     }
 
     @Test
@@ -340,6 +380,16 @@ class ApplicationRecordControllerIntegrationTest {
         assertThat(eventRepository.countByApplicationIdAndUserId(
                         application.getId(), "retry-owner"))
                 .isEqualTo(1);
+        var recorded = eventRepository
+                .findByUserIdOrderByOccurredAtAscRecordedAtAscIdAsc("retry-owner")
+                .get(0);
+        assertThat(recorded.getEventType())
+                .isEqualTo(ApplicationEventType.APPLICATION_DOCUMENT_SELECTED);
+        assertThat(recorded.getReason())
+                .doesNotContain(CV_ID.toString())
+                .doesNotContain("hash")
+                .doesNotContain("file")
+                .doesNotContain("content");
 
         mockMvc.perform(put(
                                 "/api/v1/applications/{id}/document-selections",

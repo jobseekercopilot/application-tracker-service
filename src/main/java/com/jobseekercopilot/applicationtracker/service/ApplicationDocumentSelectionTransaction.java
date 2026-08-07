@@ -87,6 +87,8 @@ public class ApplicationDocumentSelectionTransaction {
                     toResponse(record));
         }
 
+        boolean initialSelection = !commandRepository
+                .existsByUserIdAndApplicationId(ownerId, applicationId);
         boolean cvChanged = !sameDocument(record.getCvDocumentId(), cv);
         boolean coverLetterChanged =
                 !sameDocument(record.getCoverLetterDocumentId(), coverLetter);
@@ -100,11 +102,23 @@ public class ApplicationDocumentSelectionTransaction {
             setCv(record, cv);
             setCoverLetter(record, coverLetter);
             ApplicationRecord updated = applicationRepository.saveAndFlush(record);
-            eventRecorder.recordDocumentReferenceChanged(
-                    updated, Instant.now(), actor, reason);
+            eventRecorder.recordApplicationDocumentSelection(
+                    updated, initialSelection, Instant.now(), actor, reason);
             reconciliationService.markHealthy(updated);
             outcome = toResponse(updated);
         } else {
+            if (initialSelection) {
+                eventRecorder.recordApplicationDocumentSelection(
+                        record,
+                        true,
+                        Instant.now(),
+                        actor,
+                        selectionReason(
+                                record.getCvDocumentId(),
+                                cv,
+                                record.getCoverLetterDocumentId(),
+                                coverLetter));
+            }
             outcome = toResponse(record);
         }
 

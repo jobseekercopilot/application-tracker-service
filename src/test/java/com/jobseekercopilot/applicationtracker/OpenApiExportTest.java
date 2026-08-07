@@ -1,6 +1,7 @@
 package com.jobseekercopilot.applicationtracker;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -60,6 +61,12 @@ class OpenApiExportTest {
         assertEquals(
                 "http://localhost:8088",
                 generated.at("/servers/0/url").asText());
+        var eventTypes = generated.at(
+                "/components/schemas/ApplicationEventResponse/properties/eventType/enum");
+        assertTrue(eventTypes.toString().contains("APPLICATION_DOCUMENT_SELECTED"));
+        assertTrue(eventTypes.toString().contains(
+                "APPLICATION_DOCUMENT_SELECTION_CHANGED"));
+        assertTrue(eventTypes.toString().contains("APPLICATION_DOCUMENTS_FROZEN"));
 
         String formattedSpecification = objectMapper.writerWithDefaultPrettyPrinter()
                 .writeValueAsString(generated)
