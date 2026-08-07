@@ -7,6 +7,7 @@ import com.jobseekercopilot.applicationtracker.dto.CreateApplicationRequest;
 import com.jobseekercopilot.applicationtracker.dto.DocumentReplacementWorkflowResponse;
 import com.jobseekercopilot.applicationtracker.dto.DocumentReferenceReconciliationResponse;
 import com.jobseekercopilot.applicationtracker.dto.RegisterReplacementDocumentRequest;
+import com.jobseekercopilot.applicationtracker.dto.SaveDocumentSelectionsRequest;
 import com.jobseekercopilot.applicationtracker.dto.UpdateStatusRequest;
 import com.jobseekercopilot.applicationtracker.dto.UpdateDocumentReferenceRequest;
 import com.jobseekercopilot.applicationtracker.dto.WithdrawGeneratedApplicationResponse;
@@ -17,6 +18,7 @@ import com.jobseekercopilot.applicationtracker.security.ApplicationOwnerResolver
 import com.jobseekercopilot.applicationtracker.service.ApplicationCreationResult;
 import com.jobseekercopilot.applicationtracker.service.ApplicationHistoryService;
 import com.jobseekercopilot.applicationtracker.service.ApplicationDocumentReconciliationService;
+import com.jobseekercopilot.applicationtracker.service.ApplicationDocumentSelectionService;
 import com.jobseekercopilot.applicationtracker.service.ApplicationRecordService;
 import com.jobseekercopilot.applicationtracker.service.ApplicationReplacementWorkflowService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -42,6 +44,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -65,6 +68,7 @@ public class ApplicationRecordController {
     private final ApplicationReplacementWorkflowService replacementWorkflowService;
     private final ApplicationDocumentReconciliationService
             reconciliationService;
+    private final ApplicationDocumentSelectionService documentSelectionService;
     private final ApplicationHistoryService historyService;
     private final ApplicationOwnerResolver ownerResolver;
     private final ApplicationActorResolver actorResolver;
@@ -330,7 +334,8 @@ public class ApplicationRecordController {
     @PatchMapping("/{id}/document-reference")
     @Operation(
             summary = "Attach or replace a current approved document reference before application use",
-            description = "Available while the application is SAVED or DOCUMENTS_GENERATED; attaching a complete pair does not change lifecycle status")
+            description = "Legacy rolling-deploy endpoint for one selected slot. New clients must use the atomic document-selections command.",
+            deprecated = true)
     @SecurityRequirement(name = "bearerAuth")
     @SecurityRequirement(name = "serviceToken")
     @ApiResponses(value = {
@@ -350,6 +355,82 @@ public class ApplicationRecordController {
         return ResponseEntity.ok(service.updateDocumentReference(
                 ownerId,
                 id,
+                request,
+                actorResolver.resolve(authentication)));
+    }
+
+    @PutMapping(
+            value = "/{id}/document-selections",
+            produces = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(
+            summary = "Atomically save the complete optional document selection",
+            description = """
+                    Replaces the desired CV and cover-letter slots together while the
+                    application is SAVED or DOCUMENTS_GENERATED. Both slot objects are
+                    mandatory and must explicitly say SELECTED or OMITTED, preventing a
+                    partial rolling-deploy payload from being interpreted as a clear.
+                    Exact approved and available versions are verified against Document
+                    Store. Family current is recommendation metadata only.
+                    """)
+    @SecurityRequirement(name = "bearerAuth")
+    @SecurityRequirement(name = "serviceToken")
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Selection saved or exact command replayed",
+                    content = @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = ApplicationRecordResponse.class))),
+            @ApiResponse(
+                    responseCode = "400",
+                    description = "Invalid command, status or document reference",
+                    content = @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(
+                    responseCode = "404",
+                    description = "Application record not found",
+                    content = @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(
+                    responseCode = "409",
+                    description = "Stale record version or conflicting idempotency-key reuse",
+                    content = @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(
+                                    oneOf = {
+                                            com.jobseekercopilot.applicationtracker.dto.ApplicationVersionConflictResponse.class,
+                                            ErrorResponse.class
+                                    }))),
+            @ApiResponse(
+                    responseCode = "503",
+                    description = "Document reference validation unavailable",
+                    content = @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<ApplicationRecordResponse> saveDocumentSelections(
+            @Parameter(description = "UUID of the application record")
+            @PathVariable UUID id,
+            @Valid @RequestBody SaveDocumentSelectionsRequest request,
+            @Parameter(
+                    description = "Required owner-scoped retry key, fingerprinted to the complete payload",
+                    example = "save-documents-application-123-attempt-1",
+                    schema = @Schema(
+                            minLength = 1,
+                            maxLength = 128,
+                            pattern = "[A-Za-z0-9][A-Za-z0-9._:-]{0,127}"))
+            @RequestHeader(IDEMPOTENCY_KEY_HEADER) String idempotencyKey,
+            @Parameter(description = "Required owner context for approved service identities")
+            @RequestHeader(value = ApplicationOwnerResolver.OWNER_HEADER, required = false)
+            String requestedOwner,
+            @Parameter(hidden = true) Authentication authentication) {
+        String ownerId = ownerResolver.resolve(authentication, requestedOwner);
+        return ResponseEntity.ok(documentSelectionService.save(
+                ownerId,
+                id,
+                idempotencyKey,
                 request,
                 actorResolver.resolve(authentication)));
     }

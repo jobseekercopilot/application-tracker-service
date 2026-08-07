@@ -24,7 +24,7 @@ class ApplicationContractPolicyTest {
         JsonNode operation =
                 contract.at("/paths/~1api~1v1~1applications~1user~1{userId}/get");
 
-        assertEquals("4.1.0", contract.at("/info/version").asText());
+        assertEquals("4.2.0", contract.at("/info/version").asText());
         assertEquals("getApplicationsForUser", operation.path("operationId").asText());
         assertEquals(
                         Set.of("bearerAuth", "serviceToken"),
@@ -170,6 +170,76 @@ class ApplicationContractPolicyTest {
                 500,
                 contract.at("/components/schemas/UpdateStatusRequest/properties/reason/maxLength")
                         .asInt());
+    }
+
+    @Test
+    void documentSelectionContractIsAtomicExplicitAndRetrySafe()
+            throws Exception {
+        JsonNode contract = objectMapper.readTree(CONTRACT.toFile());
+        JsonNode operation = contract.at(
+                "/paths/~1api~1v1~1applications~1{id}~1document-selections/put");
+
+        assertEquals(
+                "#/components/schemas/SaveDocumentSelectionsRequest",
+                operation.at(
+                        "/requestBody/content/application~1json/schema/$ref")
+                        .asText());
+        assertTrue(operation.path("responses").has("409"));
+        assertTrue(operation.path("responses").has("503"));
+        assertTrue(StreamSupport.stream(
+                        operation.path("parameters").spliterator(), false)
+                .anyMatch(parameter ->
+                        "Idempotency-Key".equals(parameter.path("name").asText())
+                                && parameter.path("required").asBoolean()));
+
+        Set<String> requestRequired = StreamSupport.stream(
+                        contract.at(
+                                        "/components/schemas/SaveDocumentSelectionsRequest/required")
+                                .spliterator(),
+                        false)
+                .map(JsonNode::asText)
+                .collect(Collectors.toSet());
+        assertEquals(
+                Set.of("cvSelection", "coverLetterSelection", "expectedVersion"),
+                requestRequired);
+        assertEquals(
+                0,
+                contract.at(
+                                "/components/schemas/SaveDocumentSelectionsRequest/properties/expectedVersion/minimum")
+                        .asInt());
+        assertTrue(contract.at(
+                        "/components/schemas/SaveDocumentSelectionsRequest/properties/expectedVersion")
+                .has("minimum"));
+        assertEquals(
+                "#/components/schemas/ApplicationRecordResponse",
+                operation.at(
+                                "/responses/200/content/application~1json/schema/$ref")
+                        .asText());
+        assertEquals(
+                "#/components/schemas/ErrorResponse",
+                operation.at(
+                                "/responses/400/content/application~1json/schema/$ref")
+                        .asText());
+
+        Set<String> states = StreamSupport.stream(
+                        contract.at(
+                                        "/components/schemas/DocumentSelectionCommand/properties/state/enum")
+                                .spliterator(),
+                        false)
+                .map(JsonNode::asText)
+                .collect(Collectors.toSet());
+        assertEquals(Set.of("SELECTED", "OMITTED"), states);
+        assertTrue(StreamSupport.stream(
+                        contract.at(
+                                        "/components/schemas/DocumentSelectionCommand/required")
+                                .spliterator(),
+                        false)
+                .map(JsonNode::asText)
+                .collect(Collectors.toSet())
+                .contains("state"));
+        assertTrue(contract.at(
+                        "/paths/~1api~1v1~1applications~1{id}~1document-reference/patch/deprecated")
+                .asBoolean());
     }
 
     @Test

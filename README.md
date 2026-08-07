@@ -76,6 +76,12 @@ Version `4.1.0` adds the authoritative `SAVED` lifecycle state. Existing
 manual/external requests still default to `APPLIED`; callers opt into `SAVED`
 explicitly and may attach validated documents before progressing.
 
+Version `4.2.0` adds one retry-safe atomic Save command for the complete
+optional CV and cover-letter selection. Both slots must explicitly be
+`SELECTED` or `OMITTED`; the command rejects stale record versions, persists a
+payload-fingerprinted owner-scoped idempotency outcome, and preserves the
+single-slot endpoint as a deprecated rolling-deploy bridge.
+
 ## Security boundary
 
 Every public application request is authenticated. User requests require an

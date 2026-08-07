@@ -27,6 +27,30 @@ cover-letter references may be attached or replaced after revalidation. A
 saved application remains `SAVED` as references are attached; the caller must
 explicitly request `DOCUMENTS_GENERATED` after a complete pair exists.
 
+The authoritative operation is
+`PUT /api/v1/applications/{id}/document-selections`. It replaces both optional
+slots atomically. `cvSelection` and `coverLetterSelection` are both required;
+each is either `SELECTED` with one exact Document Store version ID or `OMITTED`
+without an ID. This deliberate shape means a property omitted by an older or
+partially deployed client is rejected instead of being mistaken for an
+intentional clear. The command also requires the observed `expectedVersion`
+and an owner-scoped `Idempotency-Key`. Stale writes return `409` with the
+authoritative application record, exact retries return their stored original
+outcome, and key reuse for another payload conflicts.
+
+Selected versions may be uploaded or generated; both follow the same verifier
+and response model. The owner, canonical beta job, type, `APPROVED` lifecycle
+and availability checks come from the owner-scoped Document Store reference
+endpoint. Family current is recommendation metadata only: Save persists the
+exact selected IDs and later current changes do not rewrite them. A real atomic
+change appends one content-free `DOCUMENT_REFERENCE_CHANGED` event. Clearing a
+slot is represented in that event without storing document content or IDs in
+the event reason.
+
+The deprecated `PATCH /api/v1/applications/{id}/document-reference` remains
+temporarily available for rolling deployments. It cannot express an omission;
+new clients must use the complete atomic command.
+
 On transition to `APPLIED`, Application Tracker copies a complete current pair
 into immutable application-used fields and timestamps the freeze. A saved
 application with no documents may also move directly to `APPLIED`, while a

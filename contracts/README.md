@@ -34,7 +34,7 @@ The OpenAPI `info.version` follows semantic versioning:
 - major: removed or renamed operations/fields, narrowed values, changed
   authentication, or any other consumer-breaking change.
 
-The contract is version `4.1.0`. It retains the explicitly defined owner-scoped
+The contract is version `4.2.0`. It retains the explicitly defined owner-scoped
 list boundary and lifecycle concurrency metadata from `2.1.0`, and replaces
 raw-entity, owner-wide System Data operations with a constrained versioned seed
 request and scenario-scoped seed/reset/verify operations. The minor version
@@ -55,6 +55,13 @@ intentionally breaking for consumers that pinned the obsolete taxonomy.
 Version `4.1.0` adds `SAVED` as an opt-in initial state for manual/external
 applications and publishes its guarded progression to document preparation or
 application.
+
+Version `4.2.0` adds the owner-scoped atomic document-selection command. Both
+optional slots use mandatory `SELECTED`/`OMITTED` objects so a payload produced
+during a rolling deployment cannot accidentally clear an absent field. The
+command requires `expectedVersion` and `Idempotency-Key`, returns the
+authoritative record on stale conflict, and keeps the legacy one-slot endpoint
+available as a deprecated compatibility bridge.
 
 The owner-scoped list operation explicitly defines its service-token/Bearer
 alternatives, success model, stable `401`, `403` and `404` error models, and

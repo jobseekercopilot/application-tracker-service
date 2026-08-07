@@ -1,5 +1,6 @@
 package com.jobseekercopilot.applicationtracker.exception;
 
+import com.jobseekercopilot.applicationtracker.dto.ApplicationVersionConflictResponse;
 import jakarta.persistence.OptimisticLockException;
 import jakarta.validation.ConstraintViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
@@ -11,6 +12,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
@@ -19,6 +21,18 @@ import java.util.stream.Collectors;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(ApplicationSelectionVersionConflictException.class)
+    public ResponseEntity<ApplicationVersionConflictResponse>
+            handleApplicationSelectionVersionConflict(
+                    ApplicationSelectionVersionConflictException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ApplicationVersionConflictResponse(
+                        HttpStatus.CONFLICT.value(),
+                        ex.getMessage(),
+                        LocalDateTime.now(),
+                        ex.getCurrentApplication()));
+    }
 
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<SecurityErrorResponse> handleAccessDenied(
@@ -132,6 +146,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler({
             HttpMessageNotReadableException.class,
             ConstraintViolationException.class,
+            MissingRequestHeaderException.class,
             MethodArgumentTypeMismatchException.class
     })
     public ResponseEntity<ErrorResponse> handleMalformedRequest(Exception ex) {
