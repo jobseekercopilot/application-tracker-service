@@ -27,6 +27,7 @@ import com.jobseekercopilot.applicationtracker.service.ApplicationCommandActor;
 import com.jobseekercopilot.applicationtracker.service.ApplicationDocumentSelectionService;
 import com.jobseekercopilot.applicationtracker.service.DocumentReferenceVerifier;
 import com.jobseekercopilot.applicationtracker.service.DocumentAvailabilityProjectionService;
+import com.jobseekercopilot.applicationtracker.service.ApplicationAccountLifecycleService;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.RollbackException;
@@ -108,6 +109,9 @@ class PostgresJpaSchemaIntegrationTest {
     @Autowired
     private DocumentAvailabilityProjectionRepository availabilityProjectionRepository;
 
+    @Autowired
+    private ApplicationAccountLifecycleService accountLifecycleService;
+
     @MockBean
     private DocumentReferenceVerifier documentReferenceVerifier;
 
@@ -155,6 +159,36 @@ class PostgresJpaSchemaIntegrationTest {
                 .get()
                 .extracting(ApplicationRecord::getJobTitle)
                 .isEqualTo("Synthetic Java Developer");
+    }
+
+    @Test
+    void accountErasureUsesTheNarrowAppendOnlyOverrideWithinOneTransaction() {
+        String owner = "synthetic-account-erasure-owner";
+        CreateApplicationRequest request = CreateApplicationRequest.builder()
+                .userId(owner)
+                .jobId("synthetic-account-erasure-job")
+                .provenance(ApplicationProvenance.MANUAL)
+                .canonicalJobId("synthetic-account-erasure-job")
+                .provider("TEST")
+                .externalJobId("synthetic-account-erasure-job")
+                .jobTitle("Synthetic role")
+                .companyName("Example Employer")
+                .build();
+        ApplicationCreationResult created = service.createApplication(
+                owner, "synthetic-account-erasure-operation", request);
+        assertThat(eventRepository.countByApplicationIdAndUserId(
+                        created.application().getId(), owner))
+                .isEqualTo(1);
+        assertThatThrownBy(() -> jdbcTemplate.update(
+                        "delete from application_events where user_id = ?", owner))
+                .isInstanceOf(DataAccessException.class);
+
+        accountLifecycleService.erase(owner);
+
+        assertThat(repository.findById(created.application().getId())).isEmpty();
+        assertThat(eventRepository.countByApplicationIdAndUserId(
+                        created.application().getId(), owner))
+                .isZero();
     }
 
     @Test

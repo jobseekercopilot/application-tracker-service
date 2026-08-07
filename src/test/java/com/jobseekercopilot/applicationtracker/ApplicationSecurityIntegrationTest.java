@@ -28,6 +28,7 @@ import com.jobseekercopilot.applicationtracker.security.ApplicationOwnerResolver
 import com.jobseekercopilot.applicationtracker.security.ApplicationServiceIdentityFilter;
 import com.jobseekercopilot.applicationtracker.service.DocumentReferenceVerifier;
 import com.jobseekercopilot.applicationtracker.service.DocumentStoreWorkflowClient;
+import com.jobseekercopilot.applicationtracker.service.ApplicationAccountLifecycleService;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
@@ -47,6 +48,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 
 @SpringBootTest(properties = {
         "environment-data.enabled=true",
@@ -103,6 +105,9 @@ class ApplicationSecurityIntegrationTest {
     @MockBean
     private DocumentStoreWorkflowClient documentStoreWorkflowClient;
 
+    @MockBean
+    private ApplicationAccountLifecycleService accountLifecycleService;
+
     @BeforeEach
     void cleanDatabase() {
         workflowRepository.deleteAll();
@@ -144,6 +149,28 @@ class ApplicationSecurityIntegrationTest {
                 .andExpect(jsonPath("$", hasSize(1)));
 
         assertTrue(repository.findByUserId("victim").isEmpty());
+    }
+
+    @Test
+    void accountLifecycleTokensAreConfinedToTheInternalErasureRoute()
+            throws Exception {
+        String lifecycleToken = JWKS.accountLifecycleToken(
+                "lifecycle-owner", "operation-123");
+
+        mockMvc.perform(delete("/internal/account-lifecycle/personal-data")
+                        .header(HttpHeaders.AUTHORIZATION,
+                                "Bearer " + JWKS.validToken("lifecycle-owner")))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/applications/account-export")
+                        .header(HttpHeaders.AUTHORIZATION,
+                                "Bearer " + lifecycleToken))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(delete("/internal/account-lifecycle/personal-data")
+                        .header(HttpHeaders.AUTHORIZATION,
+                                "Bearer " + lifecycleToken))
+                .andExpect(status().isNoContent());
+
+        verify(accountLifecycleService).erase("lifecycle-owner");
     }
 
     @Test
