@@ -54,7 +54,7 @@ verification before building the image. The Docker build compiles the test
 sources but does not execute the PostgreSQL Testcontainers suite because a
 standard image build must not receive the host Docker socket.
 
-The version `4.1.0` contract retains the owner-scoped public list and lifecycle
+The version `4.5.0` contract retains the owner-scoped public list and lifecycle
 concurrency contracts while replacing the unsafe raw-entity System Data routes
 with a constrained, versioned, owner-and-scenario-scoped fixture boundary and
 adds backward-compatible activity-history, recoverable generated-withdrawal
@@ -89,6 +89,18 @@ atomically stores `SELECTED` or `OMITTED` for both frozen slots, one freeze
 time, the applied status/time, a durable replay outcome, and content-free
 freeze/status events. Existing ambiguous rows migrate as `UNKNOWN` rather than
 inventing an omission.
+
+Version `4.4.0` adds content-free exact-document association lookup and an
+ordered availability projection for archive, recoverable deletion, restore and
+purge. `PURGED` is terminal: Tracker retains exact application/family/version
+identity and draft/frozen association state while scrubbing complete hashes and
+evidence details. Cross-owner lookups return an empty authoritative snapshot.
+
+Version `4.5.0` adds a no-store account export and an internal, idempotent
+personal-data erasure step. The internal route accepts only a short-lived
+account-lifecycle token with an operation ID; ordinary user tokens cannot call
+it. A narrowly scoped PostgreSQL transaction override permits account erasure
+without weakening the append-only event invariant for normal application code.
 
 ## Security boundary
 
