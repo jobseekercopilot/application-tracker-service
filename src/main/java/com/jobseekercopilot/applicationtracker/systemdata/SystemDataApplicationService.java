@@ -131,9 +131,12 @@ public class SystemDataApplicationService {
             throw new InvalidRequestException(
                     "The fixture status requires an appliedAt timestamp.");
         }
-        if (record.status() == ApplicationStatus.DOCUMENTS_GENERATED && appliedAt != null) {
+        if ((record.status() == ApplicationStatus.SAVED
+                        || record.status()
+                                == ApplicationStatus.DOCUMENTS_GENERATED)
+                && appliedAt != null) {
             throw new InvalidRequestException(
-                    "DOCUMENTS_GENERATED fixtures cannot have an appliedAt timestamp.");
+                    "SAVED and DOCUMENTS_GENERATED fixtures cannot have an appliedAt timestamp.");
         }
         if (appliedAt != null
                 && (appliedAt.isBefore(record.createdAt())
@@ -168,7 +171,8 @@ public class SystemDataApplicationService {
         target.setCoverLetterDocumentVersion(source.coverLetterDocumentVersion());
         target.setCoverLetterDocumentContentSha256(
                 source.coverLetterDocumentContentSha256());
-        boolean progressed = source.status() != ApplicationStatus.DOCUMENTS_GENERATED;
+        boolean progressed = source.status() != ApplicationStatus.SAVED
+                && source.status() != ApplicationStatus.DOCUMENTS_GENERATED;
         target.setApplicationUsedCvDocumentId(
                 progressed ? source.cvDocumentId().toString() : null);
         target.setApplicationUsedCvDocumentFamilyId(

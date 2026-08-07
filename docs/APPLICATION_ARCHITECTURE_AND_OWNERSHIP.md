@@ -135,7 +135,7 @@ rebuildable projection.
 | --- | --- | --- | --- |
 | Browser through BFF and Job Finder | RS256 access token with issuer, audience, expiry, `token_type=access` and nonblank `sub` | JWT `sub` only | Own application commands and queries. Browser `X-User-Id`, body or path values never grant ownership. |
 | CV/Cover Letter producer | Distinct producer identity injected at runtime | Trusted inbound subject forwarded as explicit owner context | Explicit idempotent create only; no status, withdraw or delete. Automatic create is transitional and removed by CVCL-01. |
-| Document Generation producer | Its own distinct producer identity | Trusted inbound subject forwarded as explicit owner context | Owner-scoped reads and pre-freeze reference commands only. |
+| Document Generation producer | Its own distinct producer identity | Trusted inbound subject forwarded as explicit owner context | Owner-scoped reads, pre-freeze reference commands and guarded `SAVED` lifecycle progression. |
 | Job Matching reader | Distinct read-only identity | Owner established by the authenticated upstream request | Owner-scoped read model only. |
 | Reporting reader | Distinct read-only identity | Owner validated by Reporting Gateway from the user access token | Owner-scoped current/event reads only. |
 | System Data | Independent environment-data identity plus exact E2E enablement | Versioned fixture envelope | Internal seed/reset/verify paths only. |

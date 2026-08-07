@@ -268,8 +268,11 @@ public class ApplicationRecordController {
             value = "/{id}/status",
             consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.APPLICATION_JSON_VALUE)
-    @Operation(summary = "Update application status")
+    @Operation(
+            summary = "Update application status",
+            description = "Bearer users follow the public lifecycle matrix. Approved producers are restricted to SAVED-to-DOCUMENTS_GENERATED and idempotent recovery of that completed bridge.")
     @SecurityRequirement(name = "bearerAuth")
+    @SecurityRequirement(name = "serviceToken")
     @ApiResponses(value = {
             @ApiResponse(
                     responseCode = "200",
@@ -283,6 +286,18 @@ public class ApplicationRecordController {
                     content = @Content(
                             mediaType = MediaType.APPLICATION_JSON_VALUE,
                             schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(
+                    responseCode = "401",
+                    description = "Missing or invalid authentication",
+                    content = @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = SecurityErrorResponse.class))),
+            @ApiResponse(
+                    responseCode = "403",
+                    description = "Authenticated identity is not permitted to perform the requested transition",
+                    content = @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = SecurityErrorResponse.class))),
             @ApiResponse(
                     responseCode = "409",
                     description = "Invalid lifecycle transition or stale/concurrent record version",
@@ -299,8 +314,11 @@ public class ApplicationRecordController {
     public ResponseEntity<ApplicationRecordResponse> updateStatus(
             @Parameter(description = "UUID of the application record") @PathVariable UUID id,
             @Valid @RequestBody UpdateStatusRequest request,
+            @Parameter(description = "Required owner context for approved service identities")
+            @RequestHeader(value = ApplicationOwnerResolver.OWNER_HEADER, required = false)
+            String requestedOwner,
             @Parameter(hidden = true) Authentication authentication) {
-        String ownerId = ownerResolver.resolve(authentication, null);
+        String ownerId = ownerResolver.resolve(authentication, requestedOwner);
         ApplicationRecordResponse response = service.updateStatus(
                 ownerId,
                 id,
@@ -310,11 +328,13 @@ public class ApplicationRecordController {
     }
 
     @PatchMapping("/{id}/document-reference")
-    @Operation(summary = "Replace a current approved document reference before application use")
+    @Operation(
+            summary = "Attach or replace a current approved document reference before application use",
+            description = "Available while the application is SAVED or DOCUMENTS_GENERATED; attaching a complete pair does not change lifecycle status")
     @SecurityRequirement(name = "bearerAuth")
     @SecurityRequirement(name = "serviceToken")
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "Current reference replaced"),
+            @ApiResponse(responseCode = "200", description = "Current reference attached or replaced"),
             @ApiResponse(responseCode = "400", description = "Reference is invalid or already frozen"),
             @ApiResponse(responseCode = "404", description = "Application record not found"),
             @ApiResponse(responseCode = "503", description = "Document reference validation unavailable")

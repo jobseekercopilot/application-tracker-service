@@ -13,6 +13,10 @@ class ApplicationLifecycleTest {
 
     private static final Map<ApplicationStatus, Set<ApplicationStatus>> EXPECTED =
             Map.of(
+                    ApplicationStatus.SAVED,
+                    Set.of(
+                            ApplicationStatus.DOCUMENTS_GENERATED,
+                            ApplicationStatus.APPLIED),
                     ApplicationStatus.DOCUMENTS_GENERATED,
                     Set.of(ApplicationStatus.APPLIED),
                     ApplicationStatus.APPLIED,

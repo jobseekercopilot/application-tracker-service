@@ -6,6 +6,7 @@ Application Tracker accepts only these forward status changes:
 
 | Current status | Allowed next status |
 | --- | --- |
+| `SAVED` | `DOCUMENTS_GENERATED`, `APPLIED` |
 | `DOCUMENTS_GENERATED` | `APPLIED` |
 | `APPLIED` | `INTERVIEW`, `OFFER`, `UNSUCCESSFUL`, `WITHDRAWN` |
 | `INTERVIEW` | `OFFER`, `UNSUCCESSFUL`, `WITHDRAWN` |
@@ -24,6 +25,13 @@ Generated-only withdrawal remains the dedicated
 `POST /api/v1/applications/{id}/withdraw-generated` operation. Its destructive
 document and retention behavior remains subject to APP-09 and is not a status
 transition.
+
+`SAVED` is the authoritative “saved to applications” state. It does not imply
+that generation or submission occurred. A `SAVED` record may move to
+`DOCUMENTS_GENERATED` only after both current references have been owner,
+job, type and approval validated. It may move directly to `APPLIED` with no
+documents, or with a complete validated pair that is frozen atomically as the
+application-used evidence. A partial pair cannot progress.
 
 ## Idempotent retries
 
@@ -72,6 +80,7 @@ current and requested statuses. It never mutates the stored row.
 - `updatedAt` changes only when a permitted transition is successfully stored.
 - `appliedAt` is assigned on the first successful transition to `APPLIED` and
   is never overwritten by later transitions.
+- `SAVED` and `DOCUMENTS_GENERATED` never assign `appliedAt`.
 - invalid, stale, concurrent-losing and same-status commands do not change
   lifecycle timestamps or append events.
 
@@ -86,6 +95,10 @@ V5 adds optimistic record versions. V7 adds the append-only event table,
 truthful legacy snapshots and the database mutation-rejection trigger. Both
 are additive, forward-only migrations. Deploy the producer before consumers
 begin sending `expectedVersion`, `occurredAt` or history queries.
+
+V12 adds `SAVED` to the record and immutable-event constraints while preserving
+all existing statuses and rows. It also permits non-generated records to enter
+`DOCUMENTS_GENERATED` only when both current document IDs are present.
 
 Rollback restores the previous compatible producer and database recovery point
 according to `DATABASE_OPERATIONS.md`. Do not remove or reuse the V5 column in

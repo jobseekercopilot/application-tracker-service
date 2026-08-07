@@ -97,6 +97,12 @@ public class ApplicationSecurityConfig {
                                 ApplicationAuthorities.PRODUCER)
                         .requestMatchers(
                                 HttpMethod.PATCH,
+                                "/api/v1/applications/*/status")
+                        .hasAnyAuthority(
+                                ApplicationAuthorities.USER,
+                                ApplicationAuthorities.PRODUCER)
+                        .requestMatchers(
+                                HttpMethod.PATCH,
                                 "/api/v1/applications/*/document-replacements/**")
                         .hasAuthority(ApplicationAuthorities.PRODUCER)
                         .requestMatchers("/api/v1/applications/**")

@@ -33,6 +33,11 @@ public final class ApplicationLifecycle {
         EnumMap<ApplicationStatus, Set<ApplicationStatus>> transitions =
                 new EnumMap<>(ApplicationStatus.class);
         transitions.put(
+                ApplicationStatus.SAVED,
+                immutable(
+                        ApplicationStatus.DOCUMENTS_GENERATED,
+                        ApplicationStatus.APPLIED));
+        transitions.put(
                 ApplicationStatus.DOCUMENTS_GENERATED,
                 immutable(ApplicationStatus.APPLIED));
         transitions.put(

@@ -24,7 +24,7 @@ class ApplicationContractPolicyTest {
         JsonNode operation =
                 contract.at("/paths/~1api~1v1~1applications~1user~1{userId}/get");
 
-        assertEquals("3.5.0", contract.at("/info/version").asText());
+        assertEquals("4.1.0", contract.at("/info/version").asText());
         assertEquals("getApplicationsForUser", operation.path("operationId").asText());
         assertEquals(
                         Set.of("bearerAuth", "serviceToken"),
@@ -106,6 +106,19 @@ class ApplicationContractPolicyTest {
                 .collect(Collectors.toSet());
         assertTrue(!required.contains("cvDocumentId"));
         assertTrue(!required.contains("coverLetterDocumentId"));
+
+        Set<String> statuses = StreamSupport.stream(
+                        createProperties.path("initialStatus")
+                                .path("enum")
+                                .spliterator(),
+                        false)
+                .map(JsonNode::asText)
+                .collect(Collectors.toSet());
+        assertTrue(statuses.contains("SAVED"));
+        assertTrue(createProperties.path("initialStatus")
+                .path("description")
+                .asText()
+                .contains("explicitly start as SAVED"));
     }
 
     @Test
@@ -115,6 +128,21 @@ class ApplicationContractPolicyTest {
         JsonNode operation =
                 contract.at("/paths/~1api~1v1~1applications~1{id}~1status/patch");
 
+        assertEquals(
+                Set.of("bearerAuth", "serviceToken"),
+                StreamSupport.stream(
+                                operation.path("security").spliterator(),
+                                false)
+                        .flatMap(requirement -> StreamSupport.stream(
+                                Spliterators.spliteratorUnknownSize(
+                                        requirement.fieldNames(), 0),
+                                false))
+                        .collect(Collectors.toSet()));
+        assertTrue(StreamSupport.stream(
+                        operation.path("parameters").spliterator(), false)
+                .anyMatch(parameter ->
+                        "X-Application-Owner".equals(
+                                parameter.path("name").asText())));
         assertEquals(
                 "#/components/schemas/UpdateStatusRequest",
                 operation.at("/requestBody/content/application~1json/schema/$ref").asText());

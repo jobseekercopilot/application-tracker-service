@@ -153,10 +153,11 @@ public class ApplicationCreationService {
         boolean allowed = provenance == ApplicationProvenance.GENERATED
                 ? status == ApplicationStatus.DOCUMENTS_GENERATED
                         || status == ApplicationStatus.APPLIED
-                : status == ApplicationStatus.APPLIED;
+                : status == ApplicationStatus.SAVED
+                        || status == ApplicationStatus.APPLIED;
         if (!allowed) {
             throw new InvalidRequestException(
-                    "GENERATED applications may start as DOCUMENTS_GENERATED or APPLIED; MANUAL and EXTERNAL applications must start as APPLIED.");
+                    "GENERATED applications may start as DOCUMENTS_GENERATED or APPLIED; MANUAL and EXTERNAL applications may start as SAVED or APPLIED.");
         }
     }
 

@@ -3,11 +3,11 @@ package com.jobseekercopilot.applicationtracker.dto;
 public enum EvidenceSection {
     EMPLOYMENT,
     EDUCATION,
-    CERTIFICATIONS,
-    PROJECTS,
-    SKILLS,
-    ACHIEVEMENTS,
+    QUALIFICATION_TRAINING,
+    PROJECT,
     VOLUNTEERING,
-    PUBLICATIONS,
+    FREELANCE,
+    ACHIEVEMENT,
+    CAREER_BREAK,
     OTHER
 }
