@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jobseekercopilot.applicationtracker.controller.ApplicationRecordController;
 import com.jobseekercopilot.applicationtracker.dto.CreateApplicationRequest;
 import com.jobseekercopilot.applicationtracker.dto.DocumentType;
 import com.jobseekercopilot.applicationtracker.dto.DocumentVersionReference;
@@ -183,9 +184,12 @@ class ApplicationSecurityIntegrationTest {
                         .header(
                                 ApplicationOwnerResolver.OWNER_HEADER,
                                 owner)
+                        .header(
+                                ApplicationRecordController.IDEMPOTENCY_KEY_HEADER,
+                                "producer-cannot-apply")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"status":"APPLIED"}
+                                {"status":"APPLIED","expectedVersion":0}
                                 """))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
@@ -304,9 +308,15 @@ class ApplicationSecurityIntegrationTest {
 
         mockMvc.perform(patch("/api/v1/applications/{id}/status", alice.getId())
                         .header(HttpHeaders.AUTHORIZATION, authorization("bob"))
+                        .header(
+                                ApplicationRecordController.IDEMPOTENCY_KEY_HEADER,
+                                "foreign-apply")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                UpdateStatusRequest.builder().status("APPLIED").build())))
+                                UpdateStatusRequest.builder()
+                                        .status("APPLIED")
+                                        .expectedVersion(0L)
+                                        .build())))
                 .andExpect(status().isNotFound());
 
         mockMvc.perform(patch("/api/v1/applications/{id}/document-reference", alice.getId())
@@ -416,9 +426,15 @@ class ApplicationSecurityIntegrationTest {
         mockMvc.perform(patch("/api/v1/applications/{id}/status", id)
                         .header(ApplicationServiceIdentityFilter.SERVICE_HEADER, PRODUCER_TOKEN)
                         .header(ApplicationOwnerResolver.OWNER_HEADER, "alice")
+                        .header(
+                                ApplicationRecordController.IDEMPOTENCY_KEY_HEADER,
+                                "producer-apply-denied")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                UpdateStatusRequest.builder().status("APPLIED").build())))
+                                UpdateStatusRequest.builder()
+                                        .status("APPLIED")
+                                        .expectedVersion(0L)
+                                        .build())))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
 
@@ -440,10 +456,14 @@ class ApplicationSecurityIntegrationTest {
                                 ApplicationServiceIdentityFilter.SERVICE_HEADER,
                                 PRODUCER_TOKEN)
                         .header(ApplicationOwnerResolver.OWNER_HEADER, "bob")
+                        .header(
+                                ApplicationRecordController.IDEMPOTENCY_KEY_HEADER,
+                                "foreign-owner-apply")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
                                 UpdateStatusRequest.builder()
                                         .status("APPLIED")
+                                        .expectedVersion(0L)
                                         .build())))
                 .andExpect(status().isNotFound());
 

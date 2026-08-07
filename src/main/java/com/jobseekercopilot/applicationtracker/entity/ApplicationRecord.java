@@ -119,6 +119,12 @@ public class ApplicationRecord {
     @Column(length = 48)
     private DocumentGroundingState applicationUsedCvGroundingState;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    @Builder.Default
+    private FrozenDocumentSelectionState applicationUsedCvState =
+            FrozenDocumentSelectionState.UNKNOWN;
+
     private String applicationUsedCoverLetterDocumentId;
 
     private String applicationUsedCoverLetterDocumentFamilyId;
@@ -136,6 +142,12 @@ public class ApplicationRecord {
     @Enumerated(EnumType.STRING)
     @Column(length = 48)
     private DocumentGroundingState applicationUsedCoverLetterGroundingState;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    @Builder.Default
+    private FrozenDocumentSelectionState applicationUsedCoverLetterState =
+            FrozenDocumentSelectionState.UNKNOWN;
 
     private LocalDateTime applicationUsedAt;
 

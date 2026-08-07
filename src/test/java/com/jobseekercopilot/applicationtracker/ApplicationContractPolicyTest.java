@@ -24,7 +24,7 @@ class ApplicationContractPolicyTest {
         JsonNode operation =
                 contract.at("/paths/~1api~1v1~1applications~1user~1{userId}/get");
 
-        assertEquals("4.2.0", contract.at("/info/version").asText());
+        assertEquals("4.3.0", contract.at("/info/version").asText());
         assertEquals("getApplicationsForUser", operation.path("operationId").asText());
         assertEquals(
                         Set.of("bearerAuth", "serviceToken"),
@@ -143,6 +143,15 @@ class ApplicationContractPolicyTest {
                 .anyMatch(parameter ->
                         "X-Application-Owner".equals(
                                 parameter.path("name").asText())));
+        JsonNode idempotencyKey = StreamSupport.stream(
+                        operation.path("parameters").spliterator(), false)
+                .filter(parameter -> "Idempotency-Key".equals(
+                        parameter.path("name").asText()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(128, idempotencyKey.at("/schema/maxLength").asInt());
+        assertTrue(idempotencyKey.at("/description").asText()
+                .contains("APPLIED"));
         assertEquals(
                 "#/components/schemas/UpdateStatusRequest",
                 operation.at("/requestBody/content/application~1json/schema/$ref").asText());
@@ -170,6 +179,12 @@ class ApplicationContractPolicyTest {
                 500,
                 contract.at("/components/schemas/UpdateStatusRequest/properties/reason/maxLength")
                         .asInt());
+        assertTrue(contract.at(
+                        "/components/schemas/ApplicationRecordResponse/properties/applicationUsedCvState")
+                .has("description"));
+        assertTrue(contract.at(
+                        "/components/schemas/ApplicationRecordResponse/properties/applicationUsedCoverLetterState")
+                .has("description"));
     }
 
     @Test

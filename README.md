@@ -35,7 +35,7 @@ backup and restore without calling AWS or any paid service. See
 [`docs/DATABASE_OPERATIONS.md`](docs/DATABASE_OPERATIONS.md).
 
 Application status changes follow a documented forward-only lifecycle. Invalid
-or stale updates return `409`, same-status retries are idempotent, and every
+or stale updates return `409`, exact command replays are idempotent, and every
 accepted mutation appends an immutable actor/source-attributed event in the
 same transaction. Every response publishes the record's optimistic `version`.
 See
@@ -81,6 +81,14 @@ optional CV and cover-letter selection. Both slots must explicitly be
 `SELECTED` or `OMITTED`; the command rejects stale record versions, persists a
 payload-fingerprinted owner-scoped idempotency outcome, and preserves the
 single-slot endpoint as a deprecated rolling-deploy bridge.
+
+Version `4.3.0` makes the first successful transition into `APPLIED` the only
+document-freeze boundary. The command requires `expectedVersion` and an
+owner-scoped `Idempotency-Key`, re-verifies each present exact version, and
+atomically stores `SELECTED` or `OMITTED` for both frozen slots, one freeze
+time, the applied status/time, a durable replay outcome, and content-free
+freeze/status events. Existing ambiguous rows migrate as `UNKNOWN` rather than
+inventing an omission.
 
 ## Security boundary
 

@@ -200,6 +200,7 @@ class ApplicationDocumentReconciliationIntegrationTest {
 
         UpdateStatusRequest request = new UpdateStatusRequest();
         request.setStatus("APPLIED");
+        request.setExpectedVersion(application.getVersion());
 
         assertThatThrownBy(() -> applicationService.updateStatus(
                         OWNER,

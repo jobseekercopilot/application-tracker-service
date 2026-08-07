@@ -29,16 +29,16 @@ transition.
 `SAVED` is the authoritative “saved to applications” state. It does not imply
 that generation or submission occurred. A `SAVED` record may move to
 `DOCUMENTS_GENERATED` only after both current references have been owner,
-job, type and approval validated. It may move directly to `APPLIED` with no
-documents, or with a complete validated pair that is frozen atomically as the
-application-used evidence. A partial pair cannot progress.
+job, type and approval validated. It may move to `APPLIED` with none, CV only,
+cover letter only or both. Every present exact reference is reverified, and
+each selected or explicitly omitted slot is frozen atomically.
 
 ## Idempotent retries
 
-Sending the record's current status again returns HTTP `200` with the current
-representation. It performs no write and does not change `version`, `updatedAt`
-or `appliedAt`. This remains true when `expectedVersion` is stale: it lets a
-caller safely retry a command whose first successful response was lost.
+The transition to `APPLIED` requires `expectedVersion` and an owner-scoped
+`Idempotency-Key`. Replaying the same key and payload returns the original
+outcome without another write or event. Reusing the key with another payload,
+or sending a new command after APPLIED, returns conflict.
 
 ## Optimistic concurrency contract
 

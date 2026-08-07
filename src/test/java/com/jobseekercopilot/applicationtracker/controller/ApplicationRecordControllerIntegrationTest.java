@@ -548,7 +548,7 @@ class ApplicationRecordControllerIntegrationTest {
                                 applicationId)
                         .header(HttpHeaders.AUTHORIZATION, authorization(ownerId))
                         .queryParam("page", "0")
-                        .queryParam("size", "2"))
+                        .queryParam("size", "3"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.applicationId")
                         .value(applicationId.toString()))
@@ -556,23 +556,25 @@ class ApplicationRecordControllerIntegrationTest {
                 .andExpect(jsonPath("$.currentVersion").value(3))
                 .andExpect(jsonPath("$.reconciled").value(true))
                 .andExpect(jsonPath("$.page").value(0))
-                .andExpect(jsonPath("$.size").value(2))
-                .andExpect(jsonPath("$.totalElements").value(4))
+                .andExpect(jsonPath("$.size").value(3))
+                .andExpect(jsonPath("$.totalElements").value(5))
                 .andExpect(jsonPath("$.totalPages").value(2))
-                .andExpect(jsonPath("$.events", hasSize(2)))
+                .andExpect(jsonPath("$.events", hasSize(3)))
                 .andExpect(jsonPath("$.events[0].eventType")
                         .value("APPLICATION_CREATED"))
                 .andExpect(jsonPath("$.events[0].actorType").value("USER"))
                 .andExpect(jsonPath("$.events[0].actorId").value(ownerId))
                 .andExpect(jsonPath("$.events[0].source").value("USER"))
                 .andExpect(jsonPath("$.events[1].eventType")
+                        .value("APPLICATION_DOCUMENTS_FROZEN"))
+                .andExpect(jsonPath("$.events[2].eventType")
                         .value("STATUS_CHANGED"))
-                .andExpect(jsonPath("$.events[1].fromStatus")
+                .andExpect(jsonPath("$.events[2].fromStatus")
                         .value("DOCUMENTS_GENERATED"))
-                .andExpect(jsonPath("$.events[1].toStatus").value("APPLIED"))
-                .andExpect(jsonPath("$.events[1].occurredAt")
+                .andExpect(jsonPath("$.events[2].toStatus").value("APPLIED"))
+                .andExpect(jsonPath("$.events[2].occurredAt")
                         .value(appliedAt.toString()))
-                .andExpect(jsonPath("$.events[1].reason").value("Applied"));
+                .andExpect(jsonPath("$.events[2].reason").value("Applied"));
 
         mockMvc.perform(get(
                                 "/api/v1/applications/{id}/history",
@@ -873,6 +875,9 @@ class ApplicationRecordControllerIntegrationTest {
 
         mockMvc.perform(patch("/api/v1/applications/{id}/status", saved.getId())
                         .header(HttpHeaders.AUTHORIZATION, authorization("user-123"))
+                        .header(
+                                ApplicationRecordController.IDEMPOTENCY_KEY_HEADER,
+                                "apply-valid-status")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -884,8 +889,27 @@ class ApplicationRecordControllerIntegrationTest {
                         .value(CV_ID.toString()))
                 .andExpect(jsonPath("$.applicationUsedCoverLetterDocumentReference.documentId")
                         .value(COVER_LETTER_ID.toString()))
+                .andExpect(jsonPath("$.applicationUsedCvState").value("SELECTED"))
+                .andExpect(jsonPath("$.applicationUsedCoverLetterState")
+                        .value("SELECTED"))
                 .andExpect(jsonPath("$.appliedAt").isNotEmpty())
                 .andExpect(jsonPath("$.version").value(1));
+
+        long eventsAfterApply = eventRepository.countByApplicationIdAndUserId(
+                saved.getId(), "user-123");
+        mockMvc.perform(patch("/api/v1/applications/{id}/status", saved.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authorization("user-123"))
+                        .header(
+                                ApplicationRecordController.IDEMPOTENCY_KEY_HEADER,
+                                "apply-valid-status")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("APPLIED"))
+                .andExpect(jsonPath("$.version").value(1));
+        assertThat(eventRepository.countByApplicationIdAndUserId(
+                        saved.getId(), "user-123"))
+                .isEqualTo(eventsAfterApply);
     }
 
     @Test
@@ -920,6 +944,9 @@ class ApplicationRecordControllerIntegrationTest {
                         .header(
                                 HttpHeaders.AUTHORIZATION,
                                 authorization("unhealthy-owner"))
+                        .header(
+                                ApplicationRecordController.IDEMPOTENCY_KEY_HEADER,
+                                "apply-unhealthy-status")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
                                 UpdateStatusRequest.builder()
@@ -1005,7 +1032,7 @@ class ApplicationRecordControllerIntegrationTest {
     }
 
     @Test
-    void updateStatus_RepeatedStatus_ShouldBeIdempotentEvenWithStaleVersion()
+    void updateStatus_NewCommandCannotRewriteAlreadyAppliedRecord()
             throws Exception {
         ApplicationRecord saved = repository.saveAndFlush(ApplicationRecord.builder()
                 .userId("retry-owner")
@@ -1022,14 +1049,15 @@ class ApplicationRecordControllerIntegrationTest {
 
         mockMvc.perform(patch("/api/v1/applications/{id}/status", saved.getId())
                         .header(HttpHeaders.AUTHORIZATION, authorization("retry-owner"))
+                        .header(
+                                ApplicationRecordController.IDEMPOTENCY_KEY_HEADER,
+                                "different-apply-command")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(UpdateStatusRequest.builder()
                                 .status("APPLIED")
                                 .expectedVersion(99L)
                                 .build())))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("APPLIED"))
-                .andExpect(jsonPath("$.version").value(0));
+                .andExpect(status().isConflict());
 
         ApplicationRecord unchanged = repository.findById(saved.getId()).orElseThrow();
         assertThat(unchanged.getVersion()).isZero();
@@ -1568,6 +1596,11 @@ class ApplicationRecordControllerIntegrationTest {
                         .header(
                                 HttpHeaders.AUTHORIZATION,
                                 authorization(ownerId))
+                        .header(
+                                ApplicationRecordController.IDEMPOTENCY_KEY_HEADER,
+                                "APPLIED".equals(statusValue)
+                                        ? "apply-history-command"
+                                        : "unused-status-command")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
                                 UpdateStatusRequest.builder()

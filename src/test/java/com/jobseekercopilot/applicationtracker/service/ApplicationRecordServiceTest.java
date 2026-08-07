@@ -60,6 +60,9 @@ class ApplicationRecordServiceTest {
     @Mock
     private ApplicationDocumentReconciliationService reconciliationService;
 
+    @Mock
+    private ApplicationAppliedFreezeService appliedFreezeService;
+
     private ApplicationRecordService service;
 
     private static final UUID CV_ID =
@@ -79,7 +82,8 @@ class ApplicationRecordServiceTest {
                 applicationCreationService,
                 eventRecorder,
                 withdrawalWorkflowService,
-                reconciliationService);
+                reconciliationService,
+                appliedFreezeService);
     }
 
     @Test
@@ -235,46 +239,35 @@ class ApplicationRecordServiceTest {
     }
 
     @Test
-    void updateStatus_WithValidStatus_ShouldUpdate() {
+    void updateStatus_ToApplied_DelegatesToAtomicFreezeCommand() {
         UUID id = UUID.randomUUID();
         UpdateStatusRequest request = UpdateStatusRequest.builder()
                 .status("APPLIED")
+                .expectedVersion(0L)
                 .build();
-
-        ApplicationRecord record = ApplicationRecord.builder()
+        ApplicationRecordResponse frozen = ApplicationRecordResponse.builder()
                 .id(id)
-                .userId("user-123")
-                .jobId("job-456")
-                .jobTitle("Java Developer")
-                .companyName("Example Ltd")
-                .cvDocumentId(CV_ID.toString())
-                .cvDocumentFamilyId(CV_ID.toString())
-                .cvDocumentVersion(1)
-                .cvDocumentContentSha256("a".repeat(64))
-                .coverLetterDocumentId(COVER_LETTER_ID.toString())
-                .coverLetterDocumentFamilyId(COVER_LETTER_ID.toString())
-                .coverLetterDocumentVersion(1)
-                .coverLetterDocumentContentSha256("b".repeat(64))
-                .status(ApplicationStatus.DOCUMENTS_GENERATED)
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
+                .status(ApplicationStatus.APPLIED)
+                .version(1)
                 .build();
-
-        when(repository.findByIdAndUserId(id, "user-123")).thenReturn(Optional.of(record));
-        when(repository.saveAndFlush(any(ApplicationRecord.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(appliedFreezeService.apply(
+                        eq("user-123"),
+                        eq(id),
+                        anyString(),
+                        eq(request),
+                        any(ApplicationCommandActor.class)))
+                .thenReturn(frozen);
 
         ApplicationRecordResponse response = service.updateStatus("user-123", id, request);
 
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.APPLIED);
-        assertThat(response.getCvDocumentId()).isEqualTo(CV_ID.toString());
-        assertThat(response.getCoverLetterDocumentId())
-                .isEqualTo(COVER_LETTER_ID.toString());
-        assertThat(response.getAppliedAt()).isNotNull();
-        assertThat(response.getApplicationUsedCvDocumentReference().getDocumentId())
-                .isEqualTo(CV_ID);
-        assertThat(response.getApplicationUsedCoverLetterDocumentReference().getDocumentId())
-                .isEqualTo(COVER_LETTER_ID);
+        verify(appliedFreezeService).apply(
+                eq("user-123"),
+                eq(id),
+                anyString(),
+                eq(request),
+                any(ApplicationCommandActor.class));
+        verify(repository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -473,78 +466,63 @@ class ApplicationRecordServiceTest {
     }
 
     @Test
-    void savedApplicationCanBecomeAppliedWithoutDocuments() {
+    void appliedTransitionPassesExplicitIdempotencyKeyToFreezeService() {
         UUID id = UUID.randomUUID();
-        ApplicationRecord record = savedRecord(id);
-        when(repository.findByIdAndUserId(id, "user-123"))
-                .thenReturn(Optional.of(record));
-        when(repository.saveAndFlush(record)).thenReturn(record);
-
-        ApplicationRecordResponse response = service.updateStatus(
-                "user-123",
-                id,
-                UpdateStatusRequest.builder().status("APPLIED").build());
-
-        assertThat(response.getStatus()).isEqualTo(ApplicationStatus.APPLIED);
-        assertThat(response.getAppliedAt()).isNotNull();
-        assertThat(response.getApplicationUsedCvDocumentReference()).isNull();
-        verify(reconciliationService, never()).requireHealthy(any());
-    }
-
-    @Test
-    void savedApplicationCannotBecomeAppliedWithOnlyOneDocument() {
-        UUID id = UUID.randomUUID();
-        ApplicationRecord record = savedRecord(id);
-        setCurrentCv(record, reference(CV_ID, DocumentType.CV));
-        when(repository.findByIdAndUserId(id, "user-123"))
-                .thenReturn(Optional.of(record));
-
-        assertThatThrownBy(() -> service.updateStatus(
+        UpdateStatusRequest request = UpdateStatusRequest.builder()
+                .status("APPLIED")
+                .expectedVersion(7L)
+                .build();
+        ApplicationRecordResponse frozen = ApplicationRecordResponse.builder()
+                .id(id)
+                .status(ApplicationStatus.APPLIED)
+                .version(8)
+                .build();
+        when(appliedFreezeService.apply(
                         "user-123",
                         id,
-                        UpdateStatusRequest.builder().status("APPLIED").build()))
-                .isInstanceOf(
-                        com.jobseekercopilot.applicationtracker.exception
-                                .InvalidDocumentReferenceException.class);
-
-        assertThat(record.getStatus()).isEqualTo(ApplicationStatus.SAVED);
-        assertThat(record.getAppliedAt()).isNull();
-        verify(repository, never()).saveAndFlush(any());
-    }
-
-    @Test
-    void savedApplicationFreezesCompletePairWhenApplied() {
-        UUID id = UUID.randomUUID();
-        ApplicationRecord record = savedRecord(id);
-        setCurrentCv(record, reference(CV_ID, DocumentType.CV));
-        setCurrentCoverLetter(
-                record, reference(COVER_LETTER_ID, DocumentType.COVER_LETTER));
-        when(repository.findByIdAndUserId(id, "user-123"))
-                .thenReturn(Optional.of(record));
-        when(repository.saveAndFlush(record)).thenReturn(record);
+                        "apply-attempt-1",
+                        request,
+                        ApplicationCommandActor.user("user-123")))
+                .thenReturn(frozen);
 
         ApplicationRecordResponse response = service.updateStatus(
                 "user-123",
                 id,
-                UpdateStatusRequest.builder().status("APPLIED").build());
+                request,
+                "apply-attempt-1",
+                ApplicationCommandActor.user("user-123"));
 
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.APPLIED);
-        assertThat(response.getAppliedAt()).isNotNull();
-        assertThat(response.getApplicationUsedAt())
-                .isEqualTo(response.getAppliedAt());
-        assertThat(response.getApplicationUsedCvDocumentReference().getDocumentId())
-                .isEqualTo(CV_ID);
-        assertThat(response
-                        .getApplicationUsedCoverLetterDocumentReference()
-                        .getDocumentId())
-                .isEqualTo(COVER_LETTER_ID);
-        verify(reconciliationService).requireHealthy(record);
+        assertThat(response.getVersion()).isEqualTo(8);
+    }
+
+    @Test
+    void optionalSingleDocumentApplyIsOwnedByFreezeService() {
+        UUID id = UUID.randomUUID();
+        UpdateStatusRequest request = UpdateStatusRequest.builder()
+                .status("APPLIED")
+                .expectedVersion(2L)
+                .build();
+        when(appliedFreezeService.apply(
+                        eq("user-123"),
+                        eq(id),
+                        anyString(),
+                        eq(request),
+                        any()))
+                .thenReturn(ApplicationRecordResponse.builder()
+                        .id(id)
+                        .status(ApplicationStatus.APPLIED)
+                        .build());
+
+        assertThat(service.updateStatus("user-123", id, request).getStatus())
+                .isEqualTo(ApplicationStatus.APPLIED);
     }
 
     @Test
     void frozenReferencesSurviveFurtherProgressionAndRejectReplacement() {
         UUID id = UUID.randomUUID();
         ApplicationRecord record = canonicalRecord(id);
+        freezeRecord(record);
         when(repository.findByIdAndUserId(id, "user-123"))
                 .thenReturn(Optional.of(record));
         when(repository.findForUpdateByIdAndUserId(id, "user-123"))
@@ -552,10 +530,6 @@ class ApplicationRecordServiceTest {
         when(repository.saveAndFlush(any(ApplicationRecord.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        service.updateStatus(
-                "user-123",
-                id,
-                UpdateStatusRequest.builder().status("APPLIED").build());
         DocumentEvidenceProvenance usedProvenance =
                 record.getApplicationUsedCvEvidenceProvenance();
         DocumentEvidenceProvenance laterCurrentProvenance = provenance(
@@ -606,16 +580,6 @@ class ApplicationRecordServiceTest {
         UpdateStatusRequest request = UpdateStatusRequest.builder()
                 .status("INVALID_STATUS")
                 .build();
-
-        ApplicationRecord record = ApplicationRecord.builder()
-                .id(id)
-                .userId("user-123")
-                .jobId("job-456")
-                .status(ApplicationStatus.DOCUMENTS_GENERATED)
-                .build();
-
-        when(repository.findByIdAndUserId(id, "user-123"))
-                .thenReturn(Optional.of(record));
 
         assertThatThrownBy(() -> service.updateStatus("user-123", id, request))
                 .isInstanceOf(InvalidStatusException.class)
@@ -732,6 +696,33 @@ class ApplicationRecordServiceTest {
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
+    }
+
+    private void freezeRecord(ApplicationRecord record) {
+        record.setApplicationUsedCvDocumentId(record.getCvDocumentId());
+        record.setApplicationUsedCvDocumentFamilyId(record.getCvDocumentFamilyId());
+        record.setApplicationUsedCvDocumentVersion(record.getCvDocumentVersion());
+        record.setApplicationUsedCvDocumentContentSha256(
+                record.getCvDocumentContentSha256());
+        record.setApplicationUsedCvEvidenceProvenance(
+                record.getCvDocumentEvidenceProvenance());
+        record.setApplicationUsedCvGroundingState(
+                record.getCvDocumentGroundingState());
+        record.setApplicationUsedCoverLetterDocumentId(
+                record.getCoverLetterDocumentId());
+        record.setApplicationUsedCoverLetterDocumentFamilyId(
+                record.getCoverLetterDocumentFamilyId());
+        record.setApplicationUsedCoverLetterDocumentVersion(
+                record.getCoverLetterDocumentVersion());
+        record.setApplicationUsedCoverLetterDocumentContentSha256(
+                record.getCoverLetterDocumentContentSha256());
+        record.setApplicationUsedCoverLetterEvidenceProvenance(
+                record.getCoverLetterDocumentEvidenceProvenance());
+        record.setApplicationUsedCoverLetterGroundingState(
+                record.getCoverLetterDocumentGroundingState());
+        record.setApplicationUsedAt(LocalDateTime.now().minusHours(1));
+        record.setAppliedAt(record.getApplicationUsedAt());
+        record.setStatus(ApplicationStatus.APPLIED);
     }
 
     private ApplicationRecord savedRecord(UUID id) {

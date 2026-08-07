@@ -61,6 +61,7 @@ public class ApplicationRecordService {
     private final ApplicationWithdrawalWorkflowService withdrawalWorkflowService;
     private final ApplicationDocumentReconciliationService
             reconciliationService;
+    private final ApplicationAppliedFreezeService appliedFreezeService;
 
     public ApplicationRecordResponse createApplication(
             String ownerId,
@@ -136,6 +137,7 @@ public class ApplicationRecordService {
                 ownerId,
                 id,
                 request,
+                legacyApplyKey(id, request),
                 ApplicationCommandActor.user(ownerId));
     }
 
@@ -145,12 +147,31 @@ public class ApplicationRecordService {
             UUID id,
             UpdateStatusRequest request,
             ApplicationCommandActor actor) {
+        return updateStatus(
+                ownerId,
+                id,
+                request,
+                legacyApplyKey(id, request),
+                actor);
+    }
+
+    @Transactional
+    public ApplicationRecordResponse updateStatus(
+            String ownerId,
+            UUID id,
+            UpdateStatusRequest request,
+            String idempotencyKey,
+            ApplicationCommandActor actor) {
         long startedAt = System.nanoTime();
+        ApplicationStatus newStatus = parseSupportedStatus(request.getStatus());
+        if (newStatus == ApplicationStatus.APPLIED) {
+            return appliedFreezeService.apply(
+                    ownerId, id, idempotencyKey, request, actor);
+        }
         ApplicationRecord record = findOwnedApplication(ownerId, id);
         requireNoActiveDocumentWorkflow(record);
 
         ApplicationStatus previousStatus = record.getStatus();
-        ApplicationStatus newStatus = parseSupportedStatus(request.getStatus());
         requireActorCanTransition(actor, previousStatus, newStatus);
         if (previousStatus == newStatus) {
             return mapToResponse(record);
@@ -165,16 +186,7 @@ public class ApplicationRecordService {
             reconciliationService.requireHealthy(record);
         }
         Instant occurredAt = resolveOccurredAt(record, request.getOccurredAt());
-        if (newStatus != ApplicationStatus.DOCUMENTS_GENERATED
-                && !hasAnyApplicationUsedDocumentReference(record)
-                && hasCompleteCurrentDocumentReferences(record)) {
-            freezeApplicationUsedReferences(
-                    record, LocalDateTime.ofInstant(occurredAt, ZoneOffset.UTC));
-        }
         record.setStatus(newStatus);
-        if (newStatus == ApplicationStatus.APPLIED && record.getAppliedAt() == null) {
-            record.setAppliedAt(LocalDateTime.ofInstant(occurredAt, ZoneOffset.UTC));
-        }
 
         ApplicationRecord updated = repository.saveAndFlush(record);
         eventRecorder.recordStatusChanged(
@@ -310,8 +322,11 @@ public class ApplicationRecordService {
                 .coverLetterDocumentReference(currentCoverLetterReference(record))
                 .applicationUsedCvDocumentReference(
                         applicationUsedCvReference(record))
+                .applicationUsedCvState(record.getApplicationUsedCvState())
                 .applicationUsedCoverLetterDocumentReference(
                         applicationUsedCoverLetterReference(record))
+                .applicationUsedCoverLetterState(
+                        record.getApplicationUsedCoverLetterState())
                 .applicationUsedAt(record.getApplicationUsedAt())
                 .status(record.getStatus())
                 .createdAt(record.getCreatedAt())
@@ -319,36 +334,6 @@ public class ApplicationRecordService {
                 .appliedAt(record.getAppliedAt())
                 .version(record.getVersion())
                 .build();
-    }
-
-    private void freezeApplicationUsedReferences(
-            ApplicationRecord record, LocalDateTime occurredAt) {
-        DocumentVersionReference cv = currentCvReference(record);
-        DocumentVersionReference coverLetter = currentCoverLetterReference(record);
-        if (cv == null || coverLetter == null) {
-            throw new InvalidDocumentReferenceException();
-        }
-        record.setApplicationUsedCvDocumentId(cv.getDocumentId().toString());
-        record.setApplicationUsedCvDocumentFamilyId(
-                cv.getDocumentFamilyId().toString());
-        record.setApplicationUsedCvDocumentVersion(cv.getVersion());
-        record.setApplicationUsedCvDocumentContentSha256(cv.getContentSha256());
-        record.setApplicationUsedCvEvidenceProvenance(
-                cv.getEvidenceProvenance());
-        record.setApplicationUsedCvGroundingState(cv.getGroundingState());
-        record.setApplicationUsedCoverLetterDocumentId(
-                coverLetter.getDocumentId().toString());
-        record.setApplicationUsedCoverLetterDocumentFamilyId(
-                coverLetter.getDocumentFamilyId().toString());
-        record.setApplicationUsedCoverLetterDocumentVersion(
-                coverLetter.getVersion());
-        record.setApplicationUsedCoverLetterDocumentContentSha256(
-                coverLetter.getContentSha256());
-        record.setApplicationUsedCoverLetterEvidenceProvenance(
-                coverLetter.getEvidenceProvenance());
-        record.setApplicationUsedCoverLetterGroundingState(
-                coverLetter.getGroundingState());
-        record.setApplicationUsedAt(occurredAt);
     }
 
     private void requireEligibleSavedTransition(
@@ -360,11 +345,6 @@ public class ApplicationRecordService {
         }
         boolean complete = hasCompleteCurrentDocumentReferences(record);
         if (newStatus == ApplicationStatus.DOCUMENTS_GENERATED && !complete) {
-            throw new InvalidDocumentReferenceException();
-        }
-        if (newStatus == ApplicationStatus.APPLIED
-                && hasAnyDocumentReference(record)
-                && !complete) {
             throw new InvalidDocumentReferenceException();
         }
     }
@@ -411,6 +391,18 @@ public class ApplicationRecordService {
             ApplicationRecord record) {
         return record.getApplicationUsedCvDocumentId() != null
                 || record.getApplicationUsedCoverLetterDocumentId() != null;
+    }
+
+    private String legacyApplyKey(UUID id, UpdateStatusRequest request) {
+        if (!"APPLIED".equalsIgnoreCase(request.getStatus())) {
+            return null;
+        }
+        return "legacy-apply-"
+                + id
+                + "-v"
+                + (request.getExpectedVersion() == null
+                        ? "missing"
+                        : request.getExpectedVersion());
     }
 
     private Instant resolveOccurredAt(

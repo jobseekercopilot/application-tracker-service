@@ -253,8 +253,11 @@ public class ApplicationDocumentSelectionTransaction {
                 .cvDocumentReference(cvReference(record))
                 .coverLetterDocumentReference(coverLetterReference(record))
                 .applicationUsedCvDocumentReference(usedCvReference(record))
+                .applicationUsedCvState(record.getApplicationUsedCvState())
                 .applicationUsedCoverLetterDocumentReference(
                         usedCoverLetterReference(record))
+                .applicationUsedCoverLetterState(
+                        record.getApplicationUsedCoverLetterState())
                 .applicationUsedAt(record.getApplicationUsedAt())
                 .status(record.getStatus())
                 .createdAt(record.getCreatedAt())

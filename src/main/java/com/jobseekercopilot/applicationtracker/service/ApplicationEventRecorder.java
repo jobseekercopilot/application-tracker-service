@@ -82,6 +82,23 @@ public class ApplicationEventRecorder {
                 record.getVersion());
     }
 
+    public ApplicationEvent recordApplicationDocumentsFrozen(
+            ApplicationRecord record,
+            ApplicationStatus previousStatus,
+            Instant occurredAt,
+            ApplicationCommandActor actor,
+            String reason) {
+        return persist(
+                record,
+                ApplicationEventType.APPLICATION_DOCUMENTS_FROZEN,
+                previousStatus,
+                ApplicationStatus.APPLIED,
+                occurredAt,
+                actor,
+                reason,
+                record.getVersion());
+    }
+
     public ApplicationEvent recordGeneratedWithdrawal(
             ApplicationRecord record,
             Instant occurredAt,

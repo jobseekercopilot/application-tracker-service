@@ -45,6 +45,9 @@ class ApplicationRecordLifecycleServiceTest {
     @Mock
     private ApplicationDocumentReconciliationService reconciliationService;
 
+    @Mock
+    private ApplicationAppliedFreezeService appliedFreezeService;
+
     private ApplicationRecordService service;
 
     @BeforeEach
@@ -55,7 +58,8 @@ class ApplicationRecordLifecycleServiceTest {
                 applicationCreationService,
                 eventRecorder,
                 withdrawalWorkflowService,
-                reconciliationService);
+                reconciliationService,
+                appliedFreezeService);
     }
 
     @Test
@@ -113,8 +117,15 @@ class ApplicationRecordLifecycleServiceTest {
     void sameStatusRepeatIsIdempotentEvenWhenTheOriginalVersionIsStale() {
         ApplicationRecord record = record(ApplicationStatus.APPLIED, 3);
         LocalDateTime updatedAt = record.getUpdatedAt();
-        when(repository.findByIdAndUserId(record.getId(), record.getUserId()))
-                .thenReturn(Optional.of(record));
+        ApplicationRecordResponse replay = ApplicationRecordResponse.builder()
+                .id(record.getId())
+                .status(ApplicationStatus.APPLIED)
+                .version(3)
+                .updatedAt(updatedAt)
+                .build();
+        when(appliedFreezeService.apply(
+                        any(), any(), any(), any(), any()))
+                .thenReturn(replay);
 
         ApplicationRecordResponse response = service.updateStatus(
                 record.getUserId(),
@@ -130,8 +141,10 @@ class ApplicationRecordLifecycleServiceTest {
     @Test
     void producerCannotAdvanceBeyondTheSavedDocumentPreparationBridge() {
         ApplicationRecord record = record(ApplicationStatus.SAVED, 0);
-        when(repository.findByIdAndUserId(record.getId(), record.getUserId()))
-                .thenReturn(Optional.of(record));
+        when(appliedFreezeService.apply(
+                        any(), any(), any(), any(), any()))
+                .thenThrow(new AccessDeniedException(
+                        "Producer status commands cannot apply an application"));
 
         assertThatThrownBy(() -> service.updateStatus(
                         record.getUserId(),
