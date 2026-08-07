@@ -96,6 +96,10 @@ public class ApplicationSecurityConfig {
                                 ApplicationAuthorities.USER,
                                 ApplicationAuthorities.PRODUCER)
                         .requestMatchers(
+                                HttpMethod.PUT,
+                                "/api/v1/applications/document/*/availability")
+                        .hasAuthority(ApplicationAuthorities.PRODUCER)
+                        .requestMatchers(
                                 HttpMethod.PATCH,
                                 "/api/v1/applications/*/status")
                         .hasAnyAuthority(

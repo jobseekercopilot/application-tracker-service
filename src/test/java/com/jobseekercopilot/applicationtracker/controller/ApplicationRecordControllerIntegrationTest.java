@@ -23,6 +23,7 @@ import com.jobseekercopilot.applicationtracker.repository.ApplicationEventReposi
 import com.jobseekercopilot.applicationtracker.repository.ApplicationDocumentSelectionCommandRepository;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationDocumentWorkflowRepository;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationDocumentReconciliationRepository;
+import com.jobseekercopilot.applicationtracker.repository.DocumentAvailabilityProjectionRepository;
 import com.jobseekercopilot.applicationtracker.security.ApplicationOwnerResolver;
 import com.jobseekercopilot.applicationtracker.security.ApplicationServiceIdentityFilter;
 import com.jobseekercopilot.applicationtracker.service.DocumentStoreWorkflowClient;
@@ -113,6 +114,10 @@ class ApplicationRecordControllerIntegrationTest {
             reconciliationRepository;
 
     @Autowired
+    private DocumentAvailabilityProjectionRepository
+            availabilityProjectionRepository;
+
+    @Autowired
     private ApplicationReplacementWorkflowService replacementWorkflowService;
 
     @MockBean
@@ -126,6 +131,7 @@ class ApplicationRecordControllerIntegrationTest {
         workflowRepository.deleteAll();
         reconciliationRepository.deleteAll();
         selectionCommandRepository.deleteAll();
+        availabilityProjectionRepository.deleteAll();
         repository.deleteAll();
         when(documentReferenceVerifier.verify(
                         anyString(),
@@ -796,6 +802,94 @@ class ApplicationRecordControllerIntegrationTest {
     }
 
     @Test
+    void purgedAvailabilityKeepsExactIdentityAndScrubsHashesAndEvidence()
+            throws Exception {
+        LocalDateTime frozenAt = LocalDateTime.now().minusDays(3);
+        ApplicationRecord saved = repository.saveAndFlush(
+                ApplicationRecord.builder()
+                        .userId("availability-owner")
+                        .jobId("job-availability")
+                        .jobTitle("Java Developer")
+                        .companyName("Example Ltd")
+                        .cvDocumentId(CV_ID.toString())
+                        .cvDocumentFamilyId(CV_ID.toString())
+                        .cvDocumentVersion(7)
+                        .cvDocumentContentSha256("a".repeat(64))
+                        .cvDocumentEvidenceProvenance(provenance())
+                        .cvDocumentGroundingState(
+                                DocumentGroundingState
+                                        .AI_GENERATED_EVIDENCE_VALIDATED)
+                        .applicationUsedCvDocumentId(CV_ID.toString())
+                        .applicationUsedCvDocumentFamilyId(CV_ID.toString())
+                        .applicationUsedCvDocumentVersion(7)
+                        .applicationUsedCvDocumentContentSha256("a".repeat(64))
+                        .applicationUsedCvEvidenceProvenance(provenance())
+                        .applicationUsedCvGroundingState(
+                                DocumentGroundingState
+                                        .AI_GENERATED_EVIDENCE_VALIDATED)
+                        .applicationUsedCvState(
+                                com.jobseekercopilot.applicationtracker.entity
+                                        .FrozenDocumentSelectionState.SELECTED)
+                        .applicationUsedAt(frozenAt)
+                        .status(ApplicationStatus.APPLIED)
+                        .build());
+        String occurredAt = LocalDateTime.now().minusMinutes(1).toString();
+
+        mockMvc.perform(put(
+                                "/api/v1/applications/document/{documentId}/availability",
+                                CV_ID)
+                        .headers(producerHeaders("availability-owner"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"availability":"PURGED","unavailableReason":"PURGED_BY_APPROVED_RETENTION_POLICY","occurredAt":"%s"}
+                                """.formatted(occurredAt)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.availability").value("PURGED"))
+                .andExpect(jsonPath("$.unavailableReason").value(
+                        "PURGED_BY_APPROVED_RETENTION_POLICY"));
+
+        mockMvc.perform(get("/api/v1/applications/{id}", saved.getId())
+                        .header(HttpHeaders.AUTHORIZATION,
+                                authorization("availability-owner")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.cvDocumentReference.documentId")
+                        .value(CV_ID.toString()))
+                .andExpect(jsonPath("$.cvDocumentReference.version").value(7))
+                .andExpect(jsonPath("$.cvDocumentReference.availability")
+                        .value("PURGED"))
+                .andExpect(jsonPath("$.cvDocumentReference.unavailableReason")
+                        .value("PURGED_BY_APPROVED_RETENTION_POLICY"))
+                .andExpect(jsonPath("$.cvDocumentReference.contentSha256")
+                        .doesNotExist())
+                .andExpect(jsonPath("$.cvDocumentReference.evidenceProvenance")
+                        .doesNotExist())
+                .andExpect(jsonPath(
+                                "$.applicationUsedCvDocumentReference.documentId")
+                        .value(CV_ID.toString()))
+                .andExpect(jsonPath(
+                                "$.applicationUsedCvDocumentReference.contentSha256")
+                        .doesNotExist());
+
+        ApplicationRecord scrubbed = repository.findById(saved.getId())
+                .orElseThrow();
+        assertThat(scrubbed.getCvDocumentContentSha256()).isNull();
+        assertThat(scrubbed.getCvDocumentEvidenceProvenance()).isNull();
+        assertThat(scrubbed.getApplicationUsedCvDocumentContentSha256())
+                .isNull();
+        assertThat(scrubbed.getApplicationUsedCvEvidenceProvenance()).isNull();
+
+        mockMvc.perform(put(
+                                "/api/v1/applications/document/{documentId}/availability",
+                                CV_ID)
+                        .headers(producerHeaders("availability-owner"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"availability":"AVAILABLE","occurredAt":"%s"}
+                                """.formatted(LocalDateTime.now())))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void getApplicationById_WhenNotExists_ShouldReturn404() throws Exception {
         mockMvc.perform(get("/api/v1/applications/{id}", UUID.randomUUID())
                         .header(HttpHeaders.AUTHORIZATION, authorization("user-123")))
@@ -847,6 +941,62 @@ class ApplicationRecordControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(saved.getId().toString()))
                 .andExpect(jsonPath("$.cvDocumentId").value("cv-123"));
+    }
+
+    @Test
+    void exactDocumentAssociationsDistinguishDraftAndFrozenWithoutCrossOwnerLeak()
+            throws Exception {
+        UUID frozenApplicationId = repository.saveAndFlush(
+                ApplicationRecord.builder()
+                        .userId("association-owner")
+                        .jobId("job-frozen")
+                        .jobTitle("Frozen role")
+                        .companyName("Example Ltd")
+                        .applicationUsedCvDocumentId(CV_ID.toString())
+                        .applicationUsedCvDocumentFamilyId(CV_ID.toString())
+                        .applicationUsedCvDocumentVersion(2)
+                        .applicationUsedCvDocumentContentSha256("a".repeat(64))
+                        .applicationUsedCvState(
+                                com.jobseekercopilot.applicationtracker.entity
+                                        .FrozenDocumentSelectionState.SELECTED)
+                        .applicationUsedAt(LocalDateTime.now().minusDays(2))
+                        .status(ApplicationStatus.APPLIED)
+                        .build())
+                .getId();
+        UUID draftApplicationId = repository.saveAndFlush(
+                ApplicationRecord.builder()
+                        .userId("association-owner")
+                        .jobId("job-draft")
+                        .jobTitle("Draft role")
+                        .companyName("Example Ltd")
+                        .cvDocumentId(CV_ID.toString())
+                        .cvDocumentFamilyId(CV_ID.toString())
+                        .cvDocumentVersion(2)
+                        .cvDocumentContentSha256("a".repeat(64))
+                        .status(ApplicationStatus.SAVED)
+                        .build())
+                .getId();
+
+        mockMvc.perform(get(
+                                "/api/v1/applications/document/{documentId}/associations",
+                                CV_ID)
+                        .headers(producerHeaders("association-owner")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.associationCount").value(2))
+                .andExpect(jsonPath("$.associations[?(@.applicationId == '%s')].associationState"
+                                .formatted(frozenApplicationId))
+                        .value(org.hamcrest.Matchers.contains("FROZEN_USED")))
+                .andExpect(jsonPath("$.associations[?(@.applicationId == '%s')].associationState"
+                                .formatted(draftApplicationId))
+                        .value(org.hamcrest.Matchers.contains("DRAFT_SELECTED")));
+
+        mockMvc.perform(get(
+                                "/api/v1/applications/document/{documentId}/associations",
+                                CV_ID)
+                        .headers(producerHeaders("different-owner")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.associationCount").value(0))
+                .andExpect(jsonPath("$.associations").isEmpty());
     }
 
     @Test

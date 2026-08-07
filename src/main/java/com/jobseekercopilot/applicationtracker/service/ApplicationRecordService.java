@@ -3,6 +3,10 @@ package com.jobseekercopilot.applicationtracker.service;
 import com.jobseekercopilot.applicationtracker.dto.ApplicationRecordResponse;
 import com.jobseekercopilot.applicationtracker.dto.CreateApplicationRequest;
 import com.jobseekercopilot.applicationtracker.dto.DocumentEvidenceProvenance;
+import com.jobseekercopilot.applicationtracker.dto.DocumentApplicationAssociation;
+import com.jobseekercopilot.applicationtracker.dto.DocumentApplicationAssociationState;
+import com.jobseekercopilot.applicationtracker.dto.DocumentApplicationAssociationsResponse;
+import com.jobseekercopilot.applicationtracker.dto.DocumentAvailabilityState;
 import com.jobseekercopilot.applicationtracker.dto.DocumentGroundingState;
 import com.jobseekercopilot.applicationtracker.dto.DocumentType;
 import com.jobseekercopilot.applicationtracker.dto.DocumentVersionReference;
@@ -13,12 +17,14 @@ import com.jobseekercopilot.applicationtracker.entity.ApplicationLifecycle;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationActorType;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationRecord;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationStatus;
+import com.jobseekercopilot.applicationtracker.entity.DocumentAvailabilityProjection;
 import com.jobseekercopilot.applicationtracker.exception.ApplicationVersionConflictException;
 import com.jobseekercopilot.applicationtracker.exception.InvalidStatusException;
 import com.jobseekercopilot.applicationtracker.exception.InvalidDocumentReferenceException;
 import com.jobseekercopilot.applicationtracker.exception.InvalidRequestException;
 import com.jobseekercopilot.applicationtracker.exception.ResourceNotFoundException;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationRecordRepository;
+import com.jobseekercopilot.applicationtracker.repository.DocumentAvailabilityProjectionRepository;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,6 +38,7 @@ import java.time.ZoneOffset;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -55,6 +62,8 @@ public class ApplicationRecordService {
     );
 
     private final ApplicationRecordRepository repository;
+    private final DocumentAvailabilityProjectionRepository
+            availabilityProjectionRepository;
     private final DocumentReferenceVerifier documentReferenceVerifier;
     private final ApplicationCreationService applicationCreationService;
     private final ApplicationEventRecorder eventRecorder;
@@ -126,6 +135,42 @@ public class ApplicationRecordService {
                 .findFirst()
                 .orElseThrow(ResourceNotFoundException::applicationNotFound);
         return mapToResponse(record);
+    }
+
+    public DocumentApplicationAssociationsResponse getDocumentAssociations(
+            String ownerId,
+            UUID documentId) {
+        List<DocumentApplicationAssociation> associations = repository
+                .findByUserIdAndDocumentId(ownerId, documentId.toString())
+                .stream()
+                .map(record -> association(record, documentId.toString()))
+                .toList();
+        return new DocumentApplicationAssociationsResponse(
+                documentId,
+                associations.size(),
+                associations);
+    }
+
+    private DocumentApplicationAssociation association(
+            ApplicationRecord record,
+            String documentId) {
+        boolean frozenCv = documentId.equals(
+                record.getApplicationUsedCvDocumentId());
+        boolean frozenCoverLetter = documentId.equals(
+                record.getApplicationUsedCoverLetterDocumentId());
+        boolean frozen = frozenCv || frozenCoverLetter;
+        DocumentType type = frozenCv || (!frozen && documentId.equals(
+                        record.getCvDocumentId()))
+                ? DocumentType.CV
+                : DocumentType.COVER_LETTER;
+        return new DocumentApplicationAssociation(
+                record.getId(),
+                type,
+                frozen
+                        ? DocumentApplicationAssociationState.FROZEN_USED
+                        : DocumentApplicationAssociationState.DRAFT_SELECTED,
+                record.getStatus(),
+                frozen ? record.getApplicationUsedAt() : null);
     }
 
     @Transactional
@@ -233,7 +278,7 @@ public class ApplicationRecordService {
                     request.getDocumentId(),
                     record.getJobId(),
                     DocumentType.CV);
-            if (reference.equals(currentCvReference(record))) {
+            if (reference.equals(currentCvReference(record, Map.of()))) {
                 return mapToResponse(record);
             }
             setCurrentCvReference(record, reference);
@@ -243,7 +288,8 @@ public class ApplicationRecordService {
                     request.getDocumentId(),
                     record.getJobId(),
                     DocumentType.COVER_LETTER);
-            if (reference.equals(currentCoverLetterReference(record))) {
+            if (reference.equals(
+                    currentCoverLetterReference(record, Map.of()))) {
                 return mapToResponse(record);
             }
             setCurrentCoverLetterReference(record, reference);
@@ -305,6 +351,8 @@ public class ApplicationRecordService {
     }
 
     private ApplicationRecordResponse mapToResponse(ApplicationRecord record) {
+        Map<UUID, DocumentAvailabilityProjection> availability =
+                availabilityFor(record);
         return ApplicationRecordResponse.builder()
                 .id(record.getId())
                 .userId(record.getUserId())
@@ -318,13 +366,15 @@ public class ApplicationRecordService {
                 .location(record.getLocation())
                 .cvDocumentId(record.getCvDocumentId())
                 .coverLetterDocumentId(record.getCoverLetterDocumentId())
-                .cvDocumentReference(currentCvReference(record))
-                .coverLetterDocumentReference(currentCoverLetterReference(record))
+                .cvDocumentReference(currentCvReference(record, availability))
+                .coverLetterDocumentReference(
+                        currentCoverLetterReference(record, availability))
                 .applicationUsedCvDocumentReference(
-                        applicationUsedCvReference(record))
+                        applicationUsedCvReference(record, availability))
                 .applicationUsedCvState(record.getApplicationUsedCvState())
                 .applicationUsedCoverLetterDocumentReference(
-                        applicationUsedCoverLetterReference(record))
+                        applicationUsedCoverLetterReference(
+                                record, availability))
                 .applicationUsedCoverLetterState(
                         record.getApplicationUsedCoverLetterState())
                 .applicationUsedAt(record.getApplicationUsedAt())
@@ -383,8 +433,8 @@ public class ApplicationRecordService {
 
     private boolean hasCompleteCurrentDocumentReferences(
             ApplicationRecord record) {
-        return currentCvReference(record) != null
-                && currentCoverLetterReference(record) != null;
+        return currentCvReference(record, Map.of()) != null
+                && currentCoverLetterReference(record, Map.of()) != null;
     }
 
     private boolean hasAnyApplicationUsedDocumentReference(
@@ -449,7 +499,9 @@ public class ApplicationRecordService {
                 reference.getGroundingState());
     }
 
-    private DocumentVersionReference currentCvReference(ApplicationRecord record) {
+    private DocumentVersionReference currentCvReference(
+            ApplicationRecord record,
+            Map<UUID, DocumentAvailabilityProjection> availability) {
         return reference(
                 record.getCvDocumentId(),
                 record.getCvDocumentFamilyId(),
@@ -458,11 +510,13 @@ public class ApplicationRecordService {
                 record.getCvDocumentVersion(),
                 record.getCvDocumentContentSha256(),
                 record.getCvDocumentEvidenceProvenance(),
-                record.getCvDocumentGroundingState());
+                record.getCvDocumentGroundingState(),
+                availability);
     }
 
     private DocumentVersionReference currentCoverLetterReference(
-            ApplicationRecord record) {
+            ApplicationRecord record,
+            Map<UUID, DocumentAvailabilityProjection> availability) {
         return reference(
                 record.getCoverLetterDocumentId(),
                 record.getCoverLetterDocumentFamilyId(),
@@ -471,11 +525,13 @@ public class ApplicationRecordService {
                 record.getCoverLetterDocumentVersion(),
                 record.getCoverLetterDocumentContentSha256(),
                 record.getCoverLetterDocumentEvidenceProvenance(),
-                record.getCoverLetterDocumentGroundingState());
+                record.getCoverLetterDocumentGroundingState(),
+                availability);
     }
 
     private DocumentVersionReference applicationUsedCvReference(
-            ApplicationRecord record) {
+            ApplicationRecord record,
+            Map<UUID, DocumentAvailabilityProjection> availability) {
         return reference(
                 record.getApplicationUsedCvDocumentId(),
                 record.getApplicationUsedCvDocumentFamilyId(),
@@ -484,11 +540,13 @@ public class ApplicationRecordService {
                 record.getApplicationUsedCvDocumentVersion(),
                 record.getApplicationUsedCvDocumentContentSha256(),
                 record.getApplicationUsedCvEvidenceProvenance(),
-                record.getApplicationUsedCvGroundingState());
+                record.getApplicationUsedCvGroundingState(),
+                availability);
     }
 
     private DocumentVersionReference applicationUsedCoverLetterReference(
-            ApplicationRecord record) {
+            ApplicationRecord record,
+            Map<UUID, DocumentAvailabilityProjection> availability) {
         return reference(
                 record.getApplicationUsedCoverLetterDocumentId(),
                 record.getApplicationUsedCoverLetterDocumentFamilyId(),
@@ -497,7 +555,8 @@ public class ApplicationRecordService {
                 record.getApplicationUsedCoverLetterDocumentVersion(),
                 record.getApplicationUsedCoverLetterDocumentContentSha256(),
                 record.getApplicationUsedCoverLetterEvidenceProvenance(),
-                record.getApplicationUsedCoverLetterGroundingState());
+                record.getApplicationUsedCoverLetterGroundingState(),
+                availability);
     }
 
     private DocumentVersionReference reference(
@@ -508,16 +567,19 @@ public class ApplicationRecordService {
             Integer version,
             String sha256,
             DocumentEvidenceProvenance evidenceProvenance,
-            DocumentGroundingState groundingState) {
+            DocumentGroundingState groundingState,
+            Map<UUID, DocumentAvailabilityProjection> availability) {
         if (documentId == null
                 || familyId == null
-                || version == null
-                || sha256 == null) {
+                || version == null) {
             return null;
         }
         try {
+            UUID parsedDocumentId = UUID.fromString(documentId);
+            DocumentAvailabilityProjection projection =
+                    availability.get(parsedDocumentId);
             return DocumentVersionReference.builder()
-                    .documentId(UUID.fromString(documentId))
+                    .documentId(parsedDocumentId)
                     .documentFamilyId(UUID.fromString(familyId))
                     .jobId(jobId)
                     .documentType(type)
@@ -525,7 +587,49 @@ public class ApplicationRecordService {
                     .contentSha256(sha256)
                     .evidenceProvenance(evidenceProvenance)
                     .groundingState(groundingState)
+                    .availability(projection == null
+                            ? DocumentAvailabilityState.AVAILABLE
+                            : projection.getAvailability())
+                    .unavailableReason(projection == null
+                            ? null
+                            : projection.getUnavailableReason())
+                    .unavailableAt(projection == null
+                            ? null
+                            : projection.getUnavailableAt())
                     .build();
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
+    }
+
+    private Map<UUID, DocumentAvailabilityProjection> availabilityFor(
+            ApplicationRecord record) {
+        List<UUID> documentIds = java.util.stream.Stream.of(
+                        record.getCvDocumentId(),
+                        record.getCoverLetterDocumentId(),
+                        record.getApplicationUsedCvDocumentId(),
+                        record.getApplicationUsedCoverLetterDocumentId())
+                .filter(java.util.Objects::nonNull)
+                .map(this::uuidOrNull)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .toList();
+        if (documentIds.isEmpty()) {
+            return Map.of();
+        }
+        return java.util.Optional.ofNullable(availabilityProjectionRepository
+                        .findByOwnerIdAndDocumentIdIn(
+                                record.getUserId(), documentIds))
+                .orElse(List.of())
+                .stream()
+                .collect(Collectors.toMap(
+                        DocumentAvailabilityProjection::getDocumentId,
+                        projection -> projection));
+    }
+
+    private UUID uuidOrNull(String value) {
+        try {
+            return UUID.fromString(value);
         } catch (IllegalArgumentException exception) {
             return null;
         }

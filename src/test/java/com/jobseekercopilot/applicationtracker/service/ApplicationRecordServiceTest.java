@@ -3,6 +3,7 @@ package com.jobseekercopilot.applicationtracker.service;
 import com.jobseekercopilot.applicationtracker.dto.ApplicationRecordResponse;
 import com.jobseekercopilot.applicationtracker.dto.CreateApplicationRequest;
 import com.jobseekercopilot.applicationtracker.dto.DocumentType;
+import com.jobseekercopilot.applicationtracker.dto.DocumentApplicationAssociationState;
 import com.jobseekercopilot.applicationtracker.dto.DocumentEvidenceProvenance;
 import com.jobseekercopilot.applicationtracker.dto.DocumentGroundingState;
 import com.jobseekercopilot.applicationtracker.dto.DocumentVersionReference;
@@ -18,6 +19,7 @@ import com.jobseekercopilot.applicationtracker.entity.ApplicationStatus;
 import com.jobseekercopilot.applicationtracker.exception.InvalidStatusException;
 import com.jobseekercopilot.applicationtracker.exception.ResourceNotFoundException;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationRecordRepository;
+import com.jobseekercopilot.applicationtracker.repository.DocumentAvailabilityProjectionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -44,6 +46,9 @@ class ApplicationRecordServiceTest {
 
     @Mock
     private ApplicationRecordRepository repository;
+
+    @Mock
+    private DocumentAvailabilityProjectionRepository availabilityRepository;
 
     @Mock
     private DocumentReferenceVerifier documentReferenceVerifier;
@@ -78,6 +83,7 @@ class ApplicationRecordServiceTest {
     void setUp() {
         service = new ApplicationRecordService(
                 repository,
+                availabilityRepository,
                 documentReferenceVerifier,
                 applicationCreationService,
                 eventRecorder,
@@ -236,6 +242,42 @@ class ApplicationRecordServiceTest {
 
         assertThat(response.getId()).isEqualTo(record.getId());
         assertThat(response.getCvDocumentId()).isEqualTo(CV_ID.toString());
+    }
+
+    @Test
+    void getDocumentAssociations_ReturnsEveryDraftAndFrozenUseWithoutContent() {
+        LocalDateTime frozenAt = LocalDateTime.of(2026, 8, 7, 6, 0);
+        ApplicationRecord draft = ApplicationRecord.builder()
+                .id(UUID.randomUUID())
+                .userId("user-123")
+                .jobId("job-draft")
+                .cvDocumentId(CV_ID.toString())
+                .status(ApplicationStatus.SAVED)
+                .build();
+        ApplicationRecord frozen = ApplicationRecord.builder()
+                .id(UUID.randomUUID())
+                .userId("user-123")
+                .jobId("job-frozen")
+                .cvDocumentId(CV_ID.toString())
+                .applicationUsedCvDocumentId(CV_ID.toString())
+                .applicationUsedAt(frozenAt)
+                .status(ApplicationStatus.APPLIED)
+                .build();
+        when(repository.findByUserIdAndDocumentId(
+                        "user-123", CV_ID.toString()))
+                .thenReturn(List.of(draft, frozen));
+
+        var response = service.getDocumentAssociations("user-123", CV_ID);
+
+        assertThat(response.documentId()).isEqualTo(CV_ID);
+        assertThat(response.associationCount()).isEqualTo(2);
+        assertThat(response.associations())
+                .extracting(association -> association.associationState())
+                .containsExactly(
+                        DocumentApplicationAssociationState.DRAFT_SELECTED,
+                        DocumentApplicationAssociationState.FROZEN_USED);
+        assertThat(response.associations().get(1).frozenAt())
+                .isEqualTo(frozenAt);
     }
 
     @Test

@@ -24,7 +24,7 @@ class ApplicationContractPolicyTest {
         JsonNode operation =
                 contract.at("/paths/~1api~1v1~1applications~1user~1{userId}/get");
 
-        assertEquals("4.3.0", contract.at("/info/version").asText());
+        assertEquals("4.4.0", contract.at("/info/version").asText());
         assertEquals("getApplicationsForUser", operation.path("operationId").asText());
         assertEquals(
                         Set.of("bearerAuth", "serviceToken"),
@@ -392,5 +392,47 @@ class ApplicationContractPolicyTest {
         assertTrue(fixtureRecord.has("updatedAt"));
         assertTrue(!fixtureRecord.has("userId"));
         assertTrue(!fixtureRecord.has("fixtureScenarioId"));
+    }
+
+    @Test
+    void lifecycleProjectionContractIsContentFreeAndHashOptional()
+            throws Exception {
+        JsonNode contract = objectMapper.readTree(CONTRACT.toFile());
+        JsonNode associations = contract.at(
+                "/paths/~1api~1v1~1applications~1document~1{documentId}~1associations/get");
+        JsonNode availability = contract.at(
+                "/paths/~1api~1v1~1applications~1document~1{documentId}~1availability/put");
+
+        assertEquals(
+                "getDocumentAssociations",
+                associations.path("operationId").asText());
+        assertEquals(
+                "updateDocumentAvailability",
+                availability.path("operationId").asText());
+        assertEquals(
+                "#/components/schemas/UpdateDocumentAvailabilityRequest",
+                availability.at(
+                                "/requestBody/content/application~1json/schema/$ref")
+                        .asText());
+        JsonNode reference = contract.at(
+                "/components/schemas/DocumentVersionReference/properties");
+        assertTrue(reference.has("availability"));
+        assertTrue(reference.has("unavailableReason"));
+        assertTrue(reference.has("unavailableAt"));
+        assertTrue(!StreamSupport.stream(
+                        contract.at(
+                                        "/components/schemas/DocumentVersionReference/required")
+                                .spliterator(),
+                        false)
+                .map(JsonNode::asText)
+                .collect(Collectors.toSet())
+                .contains("contentSha256"));
+        JsonNode association = contract.at(
+                "/components/schemas/DocumentApplicationAssociation/properties");
+        assertTrue(association.has("associationState"));
+        assertTrue(!association.has("content"));
+        assertTrue(!association.has("contentSha256"));
+        assertTrue(!association.has("fileName"));
+        assertTrue(!association.has("evidenceProvenance"));
     }
 }

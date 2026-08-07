@@ -63,6 +63,23 @@ Even if a separate status-lifecycle change later permits status regression, an
 application with frozen references cannot replace them. Submitted applications
 also require retention-aware deletion.
 
+## Availability and purge projection
+
+Document Store obtains an authoritative content-free association snapshot from
+`GET /api/v1/applications/document/{documentId}/associations` before purge.
+Each association is explicitly `DRAFT_SELECTED` or `FROZEN_USED`; an empty
+owner-scoped list is authoritative and another owner's document remains
+non-enumerable.
+
+Store projects ordered lifecycle state through
+`PUT /api/v1/applications/document/{documentId}/availability`. Application
+responses expose `AVAILABLE`, `ARCHIVED`, `DELETED` or `PURGED`, a stable
+unavailable reason and timestamp on every matching current and frozen exact
+reference. `PURGED` is terminal and clears complete content hashes, evidence
+payloads and grounding details from all matching slots. The document ID,
+family ID, server version and type remain so application history never points
+to a replacement. A stale update cannot overwrite newer lifecycle state.
+
 Document replacement now reserves a Tracker-owned workflow before Store writes,
 preserves the old reference until verification succeeds, and commits the new
 reference and activity event atomically. See

@@ -6,6 +6,9 @@ import com.jobseekercopilot.applicationtracker.dto.BeginDocumentReplacementReque
 import com.jobseekercopilot.applicationtracker.dto.CreateApplicationRequest;
 import com.jobseekercopilot.applicationtracker.dto.DocumentReplacementWorkflowResponse;
 import com.jobseekercopilot.applicationtracker.dto.DocumentReferenceReconciliationResponse;
+import com.jobseekercopilot.applicationtracker.dto.DocumentApplicationAssociationsResponse;
+import com.jobseekercopilot.applicationtracker.dto.DocumentAvailabilityResponse;
+import com.jobseekercopilot.applicationtracker.dto.UpdateDocumentAvailabilityRequest;
 import com.jobseekercopilot.applicationtracker.dto.RegisterReplacementDocumentRequest;
 import com.jobseekercopilot.applicationtracker.dto.SaveDocumentSelectionsRequest;
 import com.jobseekercopilot.applicationtracker.dto.UpdateStatusRequest;
@@ -20,6 +23,7 @@ import com.jobseekercopilot.applicationtracker.service.ApplicationHistoryService
 import com.jobseekercopilot.applicationtracker.service.ApplicationDocumentReconciliationService;
 import com.jobseekercopilot.applicationtracker.service.ApplicationDocumentSelectionService;
 import com.jobseekercopilot.applicationtracker.service.ApplicationRecordService;
+import com.jobseekercopilot.applicationtracker.service.DocumentAvailabilityProjectionService;
 import com.jobseekercopilot.applicationtracker.service.ApplicationReplacementWorkflowService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -65,6 +69,8 @@ public class ApplicationRecordController {
     public static final String IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
 
     private final ApplicationRecordService service;
+    private final DocumentAvailabilityProjectionService
+            documentAvailabilityProjectionService;
     private final ApplicationReplacementWorkflowService replacementWorkflowService;
     private final ApplicationDocumentReconciliationService
             reconciliationService;
@@ -266,6 +272,52 @@ public class ApplicationRecordController {
         ApplicationRecordResponse response =
                 service.getApplicationByDocumentId(ownerId, documentId);
         return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/document/{documentId}/associations")
+    @Operation(
+            summary = "Get content-free associations for one exact document version",
+            description = "Returns every owner-scoped draft selection and frozen use. An empty list is authoritative and cross-owner identifiers remain non-enumerable.")
+    @SecurityRequirement(name = "serviceToken")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Authoritative association snapshot"),
+            @ApiResponse(responseCode = "401", description = "Missing or invalid service identity"),
+            @ApiResponse(responseCode = "403", description = "Service identity lacks association-read authority")
+    })
+    public ResponseEntity<DocumentApplicationAssociationsResponse>
+            getDocumentAssociations(
+                    @PathVariable UUID documentId,
+                    @Parameter(description = "Required owner context for the approved reader identity")
+                    @RequestHeader(ApplicationOwnerResolver.OWNER_HEADER)
+                    String requestedOwner,
+                    @Parameter(hidden = true) Authentication authentication) {
+        String ownerId = ownerResolver.resolve(authentication, requestedOwner);
+        return ResponseEntity.ok(
+                service.getDocumentAssociations(ownerId, documentId));
+    }
+
+    @PutMapping("/document/{documentId}/availability")
+    @Operation(
+            summary = "Project exact document availability into application history",
+            description = "Applies an ordered owner-scoped lifecycle projection. PURGED is terminal and scrubs complete hashes and evidence details while retaining exact family/version identity.")
+    @SecurityRequirement(name = "serviceToken")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Availability projection applied or replayed"),
+            @ApiResponse(responseCode = "400", description = "Invalid or stale lifecycle projection"),
+            @ApiResponse(responseCode = "401", description = "Missing or invalid service identity"),
+            @ApiResponse(responseCode = "403", description = "Service identity lacks producer authority")
+    })
+    public ResponseEntity<DocumentAvailabilityResponse>
+            updateDocumentAvailability(
+                    @PathVariable UUID documentId,
+                    @Valid @RequestBody UpdateDocumentAvailabilityRequest request,
+                    @Parameter(description = "Required owner context for the approved producer identity")
+                    @RequestHeader(ApplicationOwnerResolver.OWNER_HEADER)
+                    String requestedOwner,
+                    @Parameter(hidden = true) Authentication authentication) {
+        String ownerId = ownerResolver.resolve(authentication, requestedOwner);
+        return ResponseEntity.ok(documentAvailabilityProjectionService.update(
+                ownerId, documentId, request));
     }
 
     @PatchMapping(

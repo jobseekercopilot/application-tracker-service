@@ -2,6 +2,7 @@ package com.jobseekercopilot.applicationtracker.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.UUID;
+import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -21,6 +22,11 @@ public class DocumentVersionReference {
     private String contentSha256;
     private DocumentEvidenceProvenance evidenceProvenance;
     private DocumentGroundingState groundingState;
+    @Builder.Default
+    private DocumentAvailabilityState availability =
+            DocumentAvailabilityState.AVAILABLE;
+    private String unavailableReason;
+    private LocalDateTime unavailableAt;
     private UUID parentDocumentId;
     private Integer parentDocumentVersion;
 }

@@ -14,6 +14,7 @@ import com.jobseekercopilot.applicationtracker.entity.ApplicationStatus;
 import com.jobseekercopilot.applicationtracker.exception.ApplicationVersionConflictException;
 import com.jobseekercopilot.applicationtracker.exception.InvalidApplicationTransitionException;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationRecordRepository;
+import com.jobseekercopilot.applicationtracker.repository.DocumentAvailabilityProjectionRepository;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.UUID;
@@ -29,6 +30,9 @@ class ApplicationRecordLifecycleServiceTest {
 
     @Mock
     private ApplicationRecordRepository repository;
+
+    @Mock
+    private DocumentAvailabilityProjectionRepository availabilityRepository;
 
     @Mock
     private DocumentReferenceVerifier documentReferenceVerifier;
@@ -54,6 +58,7 @@ class ApplicationRecordLifecycleServiceTest {
     void setUp() {
         service = new ApplicationRecordService(
                 repository,
+                availabilityRepository,
                 documentReferenceVerifier,
                 applicationCreationService,
                 eventRecorder,

@@ -14,21 +14,26 @@ import com.jobseekercopilot.applicationtracker.dto.DocumentType;
 import com.jobseekercopilot.applicationtracker.dto.DocumentSelectionCommand;
 import com.jobseekercopilot.applicationtracker.dto.DocumentSelectionState;
 import com.jobseekercopilot.applicationtracker.dto.DocumentVersionReference;
+import com.jobseekercopilot.applicationtracker.dto.DocumentAvailabilityState;
+import com.jobseekercopilot.applicationtracker.dto.UpdateDocumentAvailabilityRequest;
 import com.jobseekercopilot.applicationtracker.dto.SaveDocumentSelectionsRequest;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationRecordRepository;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationEventRepository;
+import com.jobseekercopilot.applicationtracker.repository.DocumentAvailabilityProjectionRepository;
 import com.jobseekercopilot.applicationtracker.service.ApplicationCreationResult;
 import com.jobseekercopilot.applicationtracker.service.ApplicationHistoryService;
 import com.jobseekercopilot.applicationtracker.service.ApplicationRecordService;
 import com.jobseekercopilot.applicationtracker.service.ApplicationCommandActor;
 import com.jobseekercopilot.applicationtracker.service.ApplicationDocumentSelectionService;
 import com.jobseekercopilot.applicationtracker.service.DocumentReferenceVerifier;
+import com.jobseekercopilot.applicationtracker.service.DocumentAvailabilityProjectionService;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.RollbackException;
 import java.util.List;
 import java.sql.SQLException;
 import java.util.UUID;
+import java.time.LocalDateTime;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -97,6 +102,12 @@ class PostgresJpaSchemaIntegrationTest {
     @Autowired
     private ApplicationDocumentSelectionService documentSelectionService;
 
+    @Autowired
+    private DocumentAvailabilityProjectionService availabilityProjectionService;
+
+    @Autowired
+    private DocumentAvailabilityProjectionRepository availabilityProjectionRepository;
+
     @MockBean
     private DocumentReferenceVerifier documentReferenceVerifier;
 
@@ -144,6 +155,55 @@ class PostgresJpaSchemaIntegrationTest {
                 .get()
                 .extracting(ApplicationRecord::getJobTitle)
                 .isEqualTo("Synthetic Java Developer");
+    }
+
+    @Test
+    void postgresProjectionScrubsPurgedHashesButRetainsExactIdentity() {
+        String ownerId = "synthetic-purged-owner";
+        UUID documentId = UUID.randomUUID();
+        UUID familyId = UUID.randomUUID();
+        ApplicationRecord saved = repository.saveAndFlush(
+                ApplicationRecord.builder()
+                        .userId(ownerId)
+                        .jobId("synthetic-purged-job")
+                        .jobTitle("Synthetic role")
+                        .companyName("Example Employer")
+                        .cvDocumentId(documentId.toString())
+                        .cvDocumentFamilyId(familyId.toString())
+                        .cvDocumentVersion(4)
+                        .cvDocumentContentSha256("a".repeat(64))
+                        .applicationUsedCvDocumentId(documentId.toString())
+                        .applicationUsedCvDocumentFamilyId(familyId.toString())
+                        .applicationUsedCvDocumentVersion(4)
+                        .applicationUsedCvDocumentContentSha256("a".repeat(64))
+                        .status(ApplicationStatus.APPLIED)
+                        .build());
+
+        availabilityProjectionService.update(
+                ownerId,
+                documentId,
+                new UpdateDocumentAvailabilityRequest(
+                        DocumentAvailabilityState.PURGED,
+                        "PURGED_BY_APPROVED_RETENTION_POLICY",
+                        LocalDateTime.now()));
+
+        ApplicationRecord persisted = repository.findById(saved.getId())
+                .orElseThrow();
+        assertThat(persisted.getCvDocumentContentSha256()).isNull();
+        assertThat(persisted.getApplicationUsedCvDocumentContentSha256())
+                .isNull();
+        var response = service.getApplicationById(ownerId, saved.getId());
+        assertThat(response.getCvDocumentReference().getDocumentId())
+                .isEqualTo(documentId);
+        assertThat(response.getCvDocumentReference().getDocumentFamilyId())
+                .isEqualTo(familyId);
+        assertThat(response.getCvDocumentReference().getVersion()).isEqualTo(4);
+        assertThat(response.getCvDocumentReference().getContentSha256()).isNull();
+        assertThat(response.getCvDocumentReference().getAvailability())
+                .isEqualTo(DocumentAvailabilityState.PURGED);
+        assertThat(availabilityProjectionRepository
+                        .findByOwnerIdAndDocumentId(ownerId, documentId))
+                .isPresent();
     }
 
     @Test

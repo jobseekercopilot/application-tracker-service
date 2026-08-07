@@ -90,6 +90,12 @@ time, the applied status/time, a durable replay outcome, and content-free
 freeze/status events. Existing ambiguous rows migrate as `UNKNOWN` rather than
 inventing an omission.
 
+Version `4.4.0` adds content-free exact-document association lookup and an
+ordered availability projection for archive, recoverable deletion, restore and
+purge. `PURGED` is terminal: Tracker retains exact application/family/version
+identity and draft/frozen association state while scrubbing complete hashes and
+evidence details. Cross-owner lookups return an empty authoritative snapshot.
+
 ## Security boundary
 
 Every public application request is authenticated. User requests require an
