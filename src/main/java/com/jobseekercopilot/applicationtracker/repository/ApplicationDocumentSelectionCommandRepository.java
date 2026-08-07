@@ -10,4 +10,6 @@ public interface ApplicationDocumentSelectionCommandRepository
 
     Optional<ApplicationDocumentSelectionCommand> findByUserIdAndIdempotencyKey(
             String userId, String idempotencyKey);
+
+    boolean existsByUserIdAndApplicationId(String userId, UUID applicationId);
 }

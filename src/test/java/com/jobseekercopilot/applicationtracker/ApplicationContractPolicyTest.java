@@ -24,7 +24,7 @@ class ApplicationContractPolicyTest {
         JsonNode operation =
                 contract.at("/paths/~1api~1v1~1applications~1user~1{userId}/get");
 
-        assertEquals("4.5.0", contract.at("/info/version").asText());
+        assertEquals("4.6.0", contract.at("/info/version").asText());
         assertEquals("getApplicationsForUser", operation.path("operationId").asText());
         assertEquals(
                         Set.of("bearerAuth", "serviceToken"),
@@ -73,6 +73,13 @@ class ApplicationContractPolicyTest {
                 "version")));
         assertTrue(!requiredFields.contains("cvDocumentId"));
         assertTrue(!requiredFields.contains("coverLetterDocumentId"));
+
+        JsonNode eventTypes = contract.at(
+                "/components/schemas/ApplicationEventResponse/properties/eventType/enum");
+        assertTrue(eventTypes.toString().contains("APPLICATION_DOCUMENT_SELECTED"));
+        assertTrue(eventTypes.toString().contains(
+                "APPLICATION_DOCUMENT_SELECTION_CHANGED"));
+        assertTrue(eventTypes.toString().contains("APPLICATION_DOCUMENTS_FROZEN"));
     }
 
     @Test

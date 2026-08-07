@@ -82,6 +82,25 @@ public class ApplicationEventRecorder {
                 record.getVersion());
     }
 
+    public ApplicationEvent recordApplicationDocumentSelection(
+            ApplicationRecord record,
+            boolean initialSelection,
+            Instant occurredAt,
+            ApplicationCommandActor actor,
+            String reason) {
+        return persist(
+                record,
+                initialSelection
+                        ? ApplicationEventType.APPLICATION_DOCUMENT_SELECTED
+                        : ApplicationEventType.APPLICATION_DOCUMENT_SELECTION_CHANGED,
+                record.getStatus(),
+                record.getStatus(),
+                occurredAt,
+                actor,
+                reason,
+                record.getVersion());
+    }
+
     public ApplicationEvent recordApplicationDocumentsFrozen(
             ApplicationRecord record,
             ApplicationStatus previousStatus,
