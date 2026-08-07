@@ -100,6 +100,15 @@ V12 adds `SAVED` to the record and immutable-event constraints while preserving
 all existing statuses and rows. It also permits non-generated records to enter
 `DOCUMENTS_GENERATED` only when both current document IDs are present.
 
+V13 adds the durable owner-scoped document-selection command ledger. It also
+removes the database complete-pair constraints because an explicit atomic Save
+may omit either optional slot while `SAVED` or `DOCUMENTS_GENERATED`; service
+validation still enforces creation and lifecycle-transition prerequisites.
+Deploy the V13-capable producer before clients send the new complete-selection
+request. Older producers and clients continue to use the deprecated one-slot
+operation during the rolling window and cannot interpret a missing new slot as
+an intentional omission.
+
 Rollback restores the previous compatible producer and database recovery point
 according to `DATABASE_OPERATIONS.md`. Do not remove or reuse the V5 column in
 an ad-hoc down migration. APP-04, Infrastructure database work and APP-09 must

@@ -51,7 +51,7 @@ class PostgresApplicationRecoveryIntegrationTest {
                         assertThat(((SQLException) error).getSQLState()).startsWith("28"));
 
         Flyway upgraded = flyway(POSTGRES.getJdbcUrl());
-        assertThat(upgraded.migrate().migrationsExecuted).isEqualTo(11);
+        assertThat(upgraded.migrate().migrationsExecuted).isEqualTo(12);
         upgraded.validate();
 
         try (Connection connection = primaryConnection()) {
@@ -359,17 +359,15 @@ class PostgresApplicationRecoveryIntegrationTest {
             assertThat(event.executeUpdate()).isEqualTo(1);
         }
 
-        assertThatThrownBy(() ->
-                insertManualDocumentsGenerated(connection, false))
-                .isInstanceOf(SQLException.class)
-                .extracting(error -> ((SQLException) error).getSQLState())
-                .isEqualTo("23514");
+        UUID explicitlyOmittedId =
+                insertManualDocumentsGenerated(connection, false);
         UUID preparedId =
                 insertManualDocumentsGenerated(connection, true);
         try (PreparedStatement delete = connection.prepareStatement(
-                "DELETE FROM application_records WHERE id = ?")) {
-            delete.setObject(1, preparedId);
-            assertThat(delete.executeUpdate()).isEqualTo(1);
+                "DELETE FROM application_records WHERE id IN (?, ?)")) {
+            delete.setObject(1, explicitlyOmittedId);
+            delete.setObject(2, preparedId);
+            assertThat(delete.executeUpdate()).isEqualTo(2);
         }
     }
 
