@@ -51,10 +51,12 @@ The deprecated `PATCH /api/v1/applications/{id}/document-reference` remains
 temporarily available for rolling deployments. It cannot express an omission;
 new clients must use the complete atomic command.
 
-On transition to `APPLIED`, Application Tracker copies a complete current pair
-into immutable application-used fields and timestamps the freeze. A saved
-application with no documents may also move directly to `APPLIED`, while a
-partial pair is rejected.
+On the first successful transition to `APPLIED`, Application Tracker
+re-verifies every present exact selection and atomically copies it into
+immutable application-used fields. Both optional frozen slots record
+`SELECTED` or explicit `OMITTED`, so none, CV only, cover letter only and both
+are valid. Existing ambiguous rows migrate as `UNKNOWN`; no legacy omission is
+invented. One timestamp is used for the freeze and `appliedAt`.
 
 Later current selection changes in Document Store cannot rewrite that snapshot.
 Even if a separate status-lifecycle change later permits status regression, an

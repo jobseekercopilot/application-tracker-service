@@ -2,14 +2,15 @@
 
 Application Tracker is the authoritative source for current application state
 and its immutable activity chronology. Accepted creation, status,
-document-reference, generated-withdrawal, document-reference reconciliation
-and deletion commands append one event in the same database transaction as the
+document-reference, APPLIED freeze, generated-withdrawal, document-reference
+reconciliation and deletion commands append events in the same transaction as the
 current-record mutation.
 
 Retries do not invent activity:
 
 - replaying a successful create returns the original record and event;
-- sending the current status again performs no write and appends no event; and
+- replaying the exact successful APPLIED command returns its durable outcome
+  and appends no event; and
 - rejected validation, ownership, transition, version or database commands
   append no event.
 
@@ -28,8 +29,9 @@ Each event contains:
 
 Callers may supply `occurredAt` and a reason with a status command. Omitted
 times default to receipt time. An explicit time before creation or more than
-five minutes in the future is rejected. The first accepted `APPLIED` event also
-sets `appliedAt` and `applicationUsedAt` to that actual time.
+five minutes in the future is rejected. The first accepted `APPLIED` command
+sets `appliedAt` and `applicationUsedAt` to that actual time and appends one
+content-free `APPLICATION_DOCUMENTS_FROZEN` event plus the status event.
 
 ## Query contract
 
@@ -45,8 +47,8 @@ unavailable data and must not invent missing activity from `updatedAt`.
 
 ## Immutability and legacy data
 
-Flyway V7 creates `application_events`, enforces one event per application
-record version and installs a PostgreSQL trigger that rejects event `UPDATE`
+Flyway V7 creates `application_events`; V14 permits one event of each type per
+application record version and retains the PostgreSQL trigger that rejects event `UPDATE`
 and `DELETE`. There is deliberately no foreign key to the mutable current row,
 so audit evidence is not cascaded away by the present deletion boundary.
 APP-09 still owns the approved archive, retention and privacy policy.

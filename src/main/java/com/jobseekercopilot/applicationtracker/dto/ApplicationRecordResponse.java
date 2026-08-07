@@ -2,6 +2,7 @@ package com.jobseekercopilot.applicationtracker.dto;
 
 import com.jobseekercopilot.applicationtracker.entity.ApplicationStatus;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationProvenance;
+import com.jobseekercopilot.applicationtracker.entity.FrozenDocumentSelectionState;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -91,11 +92,17 @@ public class ApplicationRecordResponse {
     @Schema(description = "Current approved cover letter selected before application submission")
     private DocumentVersionReference coverLetterDocumentReference;
 
-    @Schema(description = "Frozen CV version used when this application first progressed")
+    @Schema(description = "Exact CV version frozen when this application first entered APPLIED")
     private DocumentVersionReference applicationUsedCvDocumentReference;
 
-    @Schema(description = "Frozen cover-letter version used when this application first progressed")
+    @Schema(description = "Whether the frozen CV slot is selected, explicitly omitted or unknown legacy state")
+    private FrozenDocumentSelectionState applicationUsedCvState;
+
+    @Schema(description = "Exact cover-letter version frozen when this application first entered APPLIED")
     private DocumentVersionReference applicationUsedCoverLetterDocumentReference;
+
+    @Schema(description = "Whether the frozen cover-letter slot is selected, explicitly omitted or unknown legacy state")
+    private FrozenDocumentSelectionState applicationUsedCoverLetterState;
 
     @Schema(description = "Timestamp when application-used references were frozen")
     private LocalDateTime applicationUsedAt;

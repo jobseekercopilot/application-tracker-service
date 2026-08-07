@@ -44,10 +44,14 @@ public class OpenApiConfig {
                                 
                                 This service validates and stores exact approved Document Store version
                                 references. Current editable selections are separate from the immutable
-                                versions frozen when an application first progresses.
+                                versions and explicit omissions frozen only when an application
+                                first enters APPLIED.
                                 Atomic document-selection commands require explicit SELECTED or OMITTED
                                 state for both optional slots, an expected record version and a durable
                                 owner-scoped idempotency key.
+                                Applying requires expectedVersion and Idempotency-Key, re-verifies
+                                every selected exact version, and commits both frozen slot states,
+                                timestamps and content-free events atomically.
                                 Durable reconciliation verifies both reference sets against Document Store,
                                 repairs only missing immutable metadata, and reports conflicts without
                                 overwriting historical evidence.
@@ -64,7 +68,7 @@ public class OpenApiConfig {
                                 - REJECTED_BY_USER - Offer or opportunity rejected by the user
                                 - WITHDRAWN - User withdrew their application
                                 """)
-                        .version("4.2.0")
+                        .version("4.3.0")
                         .contact(new Contact()
                                 .name("Jobseeker Copilot"))
                         .license(new License()

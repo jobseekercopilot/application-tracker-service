@@ -274,7 +274,7 @@ public class ApplicationRecordController {
             produces = MediaType.APPLICATION_JSON_VALUE)
     @Operation(
             summary = "Update application status",
-            description = "Bearer users follow the public lifecycle matrix. Approved producers are restricted to SAVED-to-DOCUMENTS_GENERATED and idempotent recovery of that completed bridge.")
+            description = "Bearer users follow the public lifecycle matrix. APPLIED requires expectedVersion and Idempotency-Key and atomically freezes exact selections and omissions. Approved producers are restricted to SAVED-to-DOCUMENTS_GENERATED and idempotent recovery of that completed bridge.")
     @SecurityRequirement(name = "bearerAuth")
     @SecurityRequirement(name = "serviceToken")
     @ApiResponses(value = {
@@ -318,6 +318,14 @@ public class ApplicationRecordController {
     public ResponseEntity<ApplicationRecordResponse> updateStatus(
             @Parameter(description = "UUID of the application record") @PathVariable UUID id,
             @Valid @RequestBody UpdateStatusRequest request,
+            @Parameter(
+                    description = "Required owner-scoped retry key when status is APPLIED",
+                    schema = @Schema(
+                            minLength = 1,
+                            maxLength = 128,
+                            pattern = "[A-Za-z0-9][A-Za-z0-9._:-]{0,127}"))
+            @RequestHeader(value = IDEMPOTENCY_KEY_HEADER, required = false)
+            String idempotencyKey,
             @Parameter(description = "Required owner context for approved service identities")
             @RequestHeader(value = ApplicationOwnerResolver.OWNER_HEADER, required = false)
             String requestedOwner,
@@ -327,6 +335,7 @@ public class ApplicationRecordController {
                 ownerId,
                 id,
                 request,
+                idempotencyKey,
                 actorResolver.resolve(authentication));
         return ResponseEntity.ok(response);
     }
