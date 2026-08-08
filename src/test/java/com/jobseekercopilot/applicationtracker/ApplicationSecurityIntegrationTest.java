@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -560,6 +561,47 @@ class ApplicationSecurityIntegrationTest {
 
         mockMvc.perform(get("/actuator/health"))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void producerCanRelinkVerifiedDocumentsOnAnOwnerScopedUnappliedApplication()
+            throws Exception {
+        String owner = "generation-owner";
+        ApplicationRecord application =
+                saveApplication(owner, ApplicationStatus.DOCUMENTS_GENERATED);
+        String path = "/api/v1/applications/" + application.getId()
+                + "/document-selections";
+        String command = """
+                {
+                  "cvSelection":{"state":"SELECTED","documentId":"%s"},
+                  "coverLetterSelection":{"state":"SELECTED","documentId":"%s"},
+                  "expectedVersion":0
+                }
+                """.formatted(CV_ID, COVER_LETTER_ID);
+
+        mockMvc.perform(put(path)
+                        .header(
+                                ApplicationServiceIdentityFilter.SERVICE_HEADER,
+                                PRODUCER_TOKEN)
+                        .header(ApplicationOwnerResolver.OWNER_HEADER, owner)
+                        .header("Idempotency-Key", "generation-relink-1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(command))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.cvDocumentId").value(CV_ID.toString()))
+                .andExpect(jsonPath("$.coverLetterDocumentId")
+                        .value(COVER_LETTER_ID.toString()))
+                .andExpect(jsonPath("$.status").value("DOCUMENTS_GENERATED"));
+
+        mockMvc.perform(put(path)
+                        .header(
+                                ApplicationServiceIdentityFilter.SERVICE_HEADER,
+                                READER_TOKEN)
+                        .header(ApplicationOwnerResolver.OWNER_HEADER, owner)
+                        .header("Idempotency-Key", "reader-relink-denied")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(command))
+                .andExpect(status().isForbidden());
     }
 
     private void assertAuthenticationFailure(String token) throws Exception {

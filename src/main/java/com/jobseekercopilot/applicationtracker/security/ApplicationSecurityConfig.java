@@ -90,6 +90,12 @@ public class ApplicationSecurityConfig {
                         .hasAnyAuthority(
                                 ApplicationAuthorities.USER,
                                 ApplicationAuthorities.PRODUCER)
+                        .requestMatchers(
+                                HttpMethod.PUT,
+                                "/api/v1/applications/*/document-selections")
+                        .hasAnyAuthority(
+                                ApplicationAuthorities.USER,
+                                ApplicationAuthorities.PRODUCER)
                         .requestMatchers(HttpMethod.GET, "/api/v1/applications/**")
                         .hasAnyAuthority(
                                 ApplicationAuthorities.USER,
