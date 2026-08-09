@@ -47,9 +47,12 @@ class HttpDocumentReferenceVerifierTest {
                 "owner-123", DOCUMENT_ID, "job-456", DocumentType.CV);
 
         assertThat(reference.getDocumentId()).isEqualTo(DOCUMENT_ID);
+        assertThat(reference.getOwnerId()).isEqualTo("owner-123");
         assertThat(reference.getDocumentFamilyId()).isEqualTo(FAMILY_ID);
         assertThat(reference.getVersion()).isEqualTo(3);
         assertThat(reference.getContentSha256()).isEqualTo("a".repeat(64));
+        assertThat(reference.getSourceType().name()).isEqualTo("GENERATED");
+        assertThat(reference.getOriginalContentSha256()).isNull();
         assertThat(reference.getGroundingState().name())
                 .isEqualTo("AI_GENERATED_EVIDENCE_VALIDATED");
         assertThat(reference.getEvidenceProvenance().profileRevisionId())
@@ -134,6 +137,9 @@ class HttpDocumentReferenceVerifierTest {
 
         assertThat(reference.getDocumentId()).isEqualTo(DOCUMENT_ID);
         assertThat(reference.getContentSha256()).isEqualTo("a".repeat(64));
+        assertThat(reference.getSourceType().name()).isEqualTo("UPLOADED");
+        assertThat(reference.getOriginalContentSha256())
+                .isEqualTo("f".repeat(64));
         server.verify();
     }
 

@@ -15,6 +15,7 @@ import com.jobseekercopilot.applicationtracker.dto.DocumentSelectionCommand;
 import com.jobseekercopilot.applicationtracker.dto.DocumentSelectionState;
 import com.jobseekercopilot.applicationtracker.dto.DocumentVersionReference;
 import com.jobseekercopilot.applicationtracker.dto.DocumentAvailabilityState;
+import com.jobseekercopilot.applicationtracker.dto.DocumentSourceType;
 import com.jobseekercopilot.applicationtracker.dto.UpdateDocumentAvailabilityRequest;
 import com.jobseekercopilot.applicationtracker.dto.SaveDocumentSelectionsRequest;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationRecordRepository;
@@ -28,6 +29,7 @@ import com.jobseekercopilot.applicationtracker.service.ApplicationDocumentSelect
 import com.jobseekercopilot.applicationtracker.service.DocumentReferenceVerifier;
 import com.jobseekercopilot.applicationtracker.service.DocumentAvailabilityProjectionService;
 import com.jobseekercopilot.applicationtracker.service.ApplicationAccountLifecycleService;
+import com.jobseekercopilot.applicationtracker.exception.InvalidRequestException;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.RollbackException;
@@ -136,6 +138,8 @@ class PostgresJpaSchemaIntegrationTest {
                                     type == DocumentType.CV
                                             ? "a".repeat(64)
                                             : "b".repeat(64))
+                            .ownerId(invocation.getArgument(0))
+                            .sourceType(DocumentSourceType.GENERATED)
                             .build();
                 });
         when(documentReferenceVerifier.verify(
@@ -158,6 +162,8 @@ class PostgresJpaSchemaIntegrationTest {
                                     type == DocumentType.CV
                                             ? "a".repeat(64)
                                             : "b".repeat(64))
+                            .ownerId(invocation.getArgument(0))
+                            .sourceType(DocumentSourceType.GENERATED)
                             .build();
                 });
     }
@@ -214,7 +220,7 @@ class PostgresJpaSchemaIntegrationTest {
     }
 
     @Test
-    void postgresProjectionScrubsPurgedHashesButRetainsExactIdentity() {
+    void postgresProjectionRetainsMinimalTombstoneAndCannotResurrectPurgedContent() {
         String ownerId = "synthetic-purged-owner";
         UUID documentId = UUID.randomUUID();
         UUID familyId = UUID.randomUUID();
@@ -228,10 +234,19 @@ class PostgresJpaSchemaIntegrationTest {
                         .cvDocumentFamilyId(familyId.toString())
                         .cvDocumentVersion(4)
                         .cvDocumentContentSha256("a".repeat(64))
+                        .cvDocumentSourceType(DocumentSourceType.UPLOADED)
+                        .cvDocumentOriginalContentSha256("b".repeat(64))
+                        .cvDocumentSelectedAt(LocalDateTime.now().minusDays(2))
                         .applicationUsedCvDocumentId(documentId.toString())
                         .applicationUsedCvDocumentFamilyId(familyId.toString())
                         .applicationUsedCvDocumentVersion(4)
                         .applicationUsedCvDocumentContentSha256("a".repeat(64))
+                        .applicationUsedCvDocumentSourceType(
+                                DocumentSourceType.UPLOADED)
+                        .applicationUsedCvDocumentOriginalContentSha256(
+                                "b".repeat(64))
+                        .applicationUsedCvDocumentSelectedAt(
+                                LocalDateTime.now().minusDays(2))
                         .status(ApplicationStatus.APPLIED)
                         .build());
 
@@ -245,21 +260,59 @@ class PostgresJpaSchemaIntegrationTest {
 
         ApplicationRecord persisted = repository.findById(saved.getId())
                 .orElseThrow();
-        assertThat(persisted.getCvDocumentContentSha256()).isNull();
+        assertThat(persisted.getCvDocumentContentSha256())
+                .isEqualTo("a".repeat(64));
         assertThat(persisted.getApplicationUsedCvDocumentContentSha256())
-                .isNull();
+                .isEqualTo("a".repeat(64));
         var response = service.getApplicationById(ownerId, saved.getId());
         assertThat(response.getCvDocumentReference().getDocumentId())
                 .isEqualTo(documentId);
         assertThat(response.getCvDocumentReference().getDocumentFamilyId())
                 .isEqualTo(familyId);
         assertThat(response.getCvDocumentReference().getVersion()).isEqualTo(4);
-        assertThat(response.getCvDocumentReference().getContentSha256()).isNull();
+        assertThat(response.getCvDocumentReference().getOwnerId())
+                .isEqualTo(ownerId);
+        assertThat(response.getCvDocumentReference().getContentSha256())
+                .isEqualTo("a".repeat(64));
+        assertThat(response.getCvDocumentReference().getOriginalContentSha256())
+                .isEqualTo("b".repeat(64));
+        assertThat(response.getCvDocumentReference().getSourceType())
+                .isEqualTo(DocumentSourceType.UPLOADED);
+        assertThat(response.getCvDocumentReference().getSelectedAt()).isNotNull();
         assertThat(response.getCvDocumentReference().getAvailability())
                 .isEqualTo(DocumentAvailabilityState.PURGED);
         assertThat(availabilityProjectionRepository
                         .findByOwnerIdAndDocumentId(ownerId, documentId))
                 .isPresent();
+        var exported = accountLifecycleService.export(ownerId);
+        assertThat(exported.applications()).singleElement().satisfies(application -> {
+            assertThat(application.getCvDocumentReference().getDocumentId())
+                    .isEqualTo(documentId);
+            assertThat(application.getCvDocumentReference().getOwnerId())
+                    .isEqualTo(ownerId);
+            assertThat(application.getCvDocumentReference().getContentSha256())
+                    .isEqualTo("a".repeat(64));
+            assertThat(application
+                            .getCvDocumentReference()
+                            .getOriginalContentSha256())
+                    .isEqualTo("b".repeat(64));
+            assertThat(application.getCvDocumentReference().getSourceType())
+                    .isEqualTo(DocumentSourceType.UPLOADED);
+            assertThat(application.getCvDocumentReference().getSelectedAt())
+                    .isNotNull();
+            assertThat(application.getCvDocumentReference().getAvailability())
+                    .isEqualTo(DocumentAvailabilityState.PURGED);
+        });
+
+        assertThatThrownBy(() -> availabilityProjectionService.update(
+                        ownerId,
+                        documentId,
+                        new UpdateDocumentAvailabilityRequest(
+                                DocumentAvailabilityState.AVAILABLE,
+                                null,
+                                LocalDateTime.now().plusMinutes(1))))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("cannot be restored");
     }
 
     @Test
@@ -362,6 +415,9 @@ class PostgresJpaSchemaIntegrationTest {
 
             ApplicationRecord persisted =
                     repository.findById(saved.getId()).orElseThrow();
+            assertThat(persisted.getCvDocumentSourceType())
+                    .isEqualTo(DocumentSourceType.GENERATED);
+            assertThat(persisted.getCvDocumentSelectedAt()).isNotNull();
             UUID winningDocument = UUID.fromString(persisted.getCvDocumentId());
             String winningKey = winningDocument.equals(firstDocument)
                     ? "selection-writer-one"

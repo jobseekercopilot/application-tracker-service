@@ -24,7 +24,7 @@ class ApplicationContractPolicyTest {
         JsonNode operation =
                 contract.at("/paths/~1api~1v1~1applications~1user~1{userId}/get");
 
-        assertEquals("4.7.0", contract.at("/info/version").asText());
+        assertEquals("4.8.0", contract.at("/info/version").asText());
         assertEquals("getApplicationsForUser", operation.path("operationId").asText());
         assertEquals(
                         Set.of("bearerAuth", "serviceToken"),
@@ -81,6 +81,13 @@ class ApplicationContractPolicyTest {
         assertTrue(eventTypes.toString().contains(
                 "APPLICATION_DOCUMENT_SELECTION_CHANGED"));
         assertTrue(eventTypes.toString().contains("APPLICATION_DOCUMENTS_FROZEN"));
+
+        JsonNode exactReference = contract.at(
+                "/components/schemas/DocumentVersionReference/properties");
+        assertTrue(exactReference.has("ownerId"));
+        assertTrue(exactReference.has("sourceType"));
+        assertTrue(exactReference.has("originalContentSha256"));
+        assertTrue(exactReference.has("selectedAt"));
     }
 
     @Test

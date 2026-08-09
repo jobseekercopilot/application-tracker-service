@@ -395,7 +395,11 @@ class ApplicationRecordServiceTest {
         when(repository.findForUpdateByIdAndUserId(id, "user-123"))
                 .thenReturn(Optional.of(record));
         when(documentReferenceVerifier.verify(
-                        "user-123", replacementId, "job-456", DocumentType.CV))
+                        "user-123",
+                        replacementId,
+                        "job-456",
+                        id,
+                        DocumentType.CV))
                 .thenReturn(DocumentVersionReference.builder()
                         .documentId(replacementId)
                         .documentFamilyId(CV_ID)
@@ -428,7 +432,11 @@ class ApplicationRecordServiceTest {
         when(repository.findForUpdateByIdAndUserId(id, "user-123"))
                 .thenReturn(Optional.of(record));
         when(documentReferenceVerifier.verify(
-                        "user-123", CV_ID, "job-456", DocumentType.CV))
+                        "user-123",
+                        CV_ID,
+                        "job-456",
+                        id,
+                        DocumentType.CV))
                 .thenReturn(reference(CV_ID, DocumentType.CV));
         when(repository.saveAndFlush(record)).thenReturn(record);
 
@@ -613,6 +621,7 @@ class ApplicationRecordServiceTest {
                 anyString(),
                 any(UUID.class),
                 anyString(),
+                any(UUID.class),
                 any(DocumentType.class));
     }
 
@@ -652,6 +661,26 @@ class ApplicationRecordServiceTest {
         assertThatThrownBy(() -> service.deleteApplication("user-123", id))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessage("Application record not found.");
+    }
+
+    @Test
+    void deleteApplication_PreservesCoverLetterOnlyFrozenHistory() {
+        UUID id = UUID.randomUUID();
+        ApplicationRecord record = ApplicationRecord.builder()
+                .id(id)
+                .userId("user-123")
+                .applicationUsedAt(LocalDateTime.now())
+                .applicationUsedCoverLetterDocumentId(
+                        COVER_LETTER_ID.toString())
+                .build();
+        when(repository.findForUpdateByIdAndUserId(id, "user-123"))
+                .thenReturn(Optional.of(record));
+
+        assertThatThrownBy(() -> service.deleteApplication("user-123", id))
+                .isInstanceOf(InvalidStatusException.class)
+                .hasMessageContaining("retention-aware deletion");
+
+        verify(repository, never()).delete(any());
     }
 
     @Test

@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
 import com.jobseekercopilot.applicationtracker.dto.DocumentType;
+import com.jobseekercopilot.applicationtracker.dto.DocumentSourceType;
 import com.jobseekercopilot.applicationtracker.dto.DocumentVersionReference;
 import com.jobseekercopilot.applicationtracker.dto.UpdateStatusRequest;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationDocumentReconciliation;
@@ -63,11 +64,12 @@ class ApplicationDocumentReconciliationIntegrationTest {
                         anyString(),
                         any(UUID.class),
                         anyString(),
+                        any(UUID.class),
                         any(DocumentType.class)))
                 .thenAnswer(invocation -> reference(
                         invocation.getArgument(1),
                         invocation.getArgument(2),
-                        invocation.getArgument(3)));
+                        invocation.getArgument(4)));
     }
 
     @Test
@@ -87,12 +89,17 @@ class ApplicationDocumentReconciliationIntegrationTest {
         assertThat(repaired.getCvDocumentVersion()).isEqualTo(1);
         assertThat(repaired.getCvDocumentContentSha256())
                 .isEqualTo(CV_SHA);
+        assertThat(repaired.getCvDocumentSourceType())
+                .isEqualTo(DocumentSourceType.GENERATED);
+        assertThat(repaired.getCvDocumentSelectedAt()).isNotNull();
         assertThat(repaired.getCoverLetterDocumentFamilyId())
                 .isEqualTo(coverId.toString());
         assertThat(repaired.getCoverLetterDocumentVersion())
                 .isEqualTo(1);
         assertThat(repaired.getCoverLetterDocumentContentSha256())
                 .isEqualTo(COVER_SHA);
+        assertThat(repaired.getCoverLetterDocumentSourceType())
+                .isEqualTo(DocumentSourceType.GENERATED);
 
         ApplicationDocumentReconciliation state =
                 reconciliationRepository
@@ -170,6 +177,7 @@ class ApplicationDocumentReconciliationIntegrationTest {
                         anyString(),
                         any(UUID.class),
                         anyString(),
+                        any(UUID.class),
                         any(DocumentType.class)))
                 .thenThrow(new DocumentReferenceUnavailableException());
 
@@ -261,6 +269,7 @@ class ApplicationDocumentReconciliationIntegrationTest {
                         type == DocumentType.CV
                                 ? CV_SHA
                                 : COVER_SHA)
+                .sourceType(DocumentSourceType.GENERATED)
                 .build();
     }
 }

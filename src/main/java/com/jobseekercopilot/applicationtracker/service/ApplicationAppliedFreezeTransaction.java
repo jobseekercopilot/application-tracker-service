@@ -88,9 +88,9 @@ public class ApplicationAppliedFreezeTransaction {
                 record.getCoverLetterDocumentId(),
                 DocumentType.COVER_LETTER);
 
-        freezeCv(record, cv);
-        freezeCoverLetter(record, coverLetter);
         LocalDateTime frozenAt = LocalDateTime.ofInstant(occurredAt, ZoneOffset.UTC);
+        freezeCv(record, cv, frozenAt);
+        freezeCoverLetter(record, coverLetter, frozenAt);
         record.setApplicationUsedAt(frozenAt);
         record.setStatus(ApplicationStatus.APPLIED);
         record.setAppliedAt(frozenAt);
@@ -176,6 +176,7 @@ public class ApplicationAppliedFreezeTransaction {
                     record.getUserId(),
                     UUID.fromString(documentId),
                     selectionJobId(record),
+                    record.getId(),
                     documentType);
         } catch (IllegalArgumentException invalidIdentifier) {
             throw new InvalidDocumentReferenceException();
@@ -190,7 +191,9 @@ public class ApplicationAppliedFreezeTransaction {
     }
 
     private void freezeCv(
-            ApplicationRecord record, DocumentVersionReference reference) {
+            ApplicationRecord record,
+            DocumentVersionReference reference,
+            LocalDateTime fallbackSelectedAt) {
         record.setApplicationUsedCvState(reference == null
                 ? FrozenDocumentSelectionState.OMITTED
                 : FrozenDocumentSelectionState.SELECTED);
@@ -200,6 +203,16 @@ public class ApplicationAppliedFreezeTransaction {
                 reference == null ? null : reference.getVersion());
         record.setApplicationUsedCvDocumentContentSha256(
                 reference == null ? null : reference.getContentSha256());
+        record.setApplicationUsedCvDocumentSourceType(
+                reference == null ? null : reference.getSourceType());
+        record.setApplicationUsedCvDocumentOriginalContentSha256(
+                reference == null
+                        ? null
+                        : reference.getOriginalContentSha256());
+        record.setApplicationUsedCvDocumentSelectedAt(reference == null
+                ? null
+                : java.util.Objects.requireNonNullElse(
+                        record.getCvDocumentSelectedAt(), fallbackSelectedAt));
         record.setApplicationUsedCvEvidenceProvenance(
                 reference == null ? null : reference.getEvidenceProvenance());
         record.setApplicationUsedCvGroundingState(
@@ -207,7 +220,9 @@ public class ApplicationAppliedFreezeTransaction {
     }
 
     private void freezeCoverLetter(
-            ApplicationRecord record, DocumentVersionReference reference) {
+            ApplicationRecord record,
+            DocumentVersionReference reference,
+            LocalDateTime fallbackSelectedAt) {
         record.setApplicationUsedCoverLetterState(reference == null
                 ? FrozenDocumentSelectionState.OMITTED
                 : FrozenDocumentSelectionState.SELECTED);
@@ -217,6 +232,17 @@ public class ApplicationAppliedFreezeTransaction {
                 reference == null ? null : reference.getVersion());
         record.setApplicationUsedCoverLetterDocumentContentSha256(
                 reference == null ? null : reference.getContentSha256());
+        record.setApplicationUsedCoverLetterDocumentSourceType(
+                reference == null ? null : reference.getSourceType());
+        record.setApplicationUsedCoverLetterDocumentOriginalContentSha256(
+                reference == null
+                        ? null
+                        : reference.getOriginalContentSha256());
+        record.setApplicationUsedCoverLetterDocumentSelectedAt(reference == null
+                ? null
+                : java.util.Objects.requireNonNullElse(
+                        record.getCoverLetterDocumentSelectedAt(),
+                        fallbackSelectedAt));
         record.setApplicationUsedCoverLetterEvidenceProvenance(
                 reference == null ? null : reference.getEvidenceProvenance());
         record.setApplicationUsedCoverLetterGroundingState(
@@ -304,6 +330,9 @@ public class ApplicationAppliedFreezeTransaction {
                         record.getCvDocumentFamilyId(),
                         record.getCvDocumentVersion(),
                         record.getCvDocumentContentSha256(),
+                        record.getCvDocumentSourceType(),
+                        record.getCvDocumentOriginalContentSha256(),
+                        record.getCvDocumentSelectedAt(),
                         record.getCvDocumentEvidenceProvenance(),
                         record.getCvDocumentGroundingState(),
                         record,
@@ -313,6 +342,9 @@ public class ApplicationAppliedFreezeTransaction {
                         record.getCoverLetterDocumentFamilyId(),
                         record.getCoverLetterDocumentVersion(),
                         record.getCoverLetterDocumentContentSha256(),
+                        record.getCoverLetterDocumentSourceType(),
+                        record.getCoverLetterDocumentOriginalContentSha256(),
+                        record.getCoverLetterDocumentSelectedAt(),
                         record.getCoverLetterDocumentEvidenceProvenance(),
                         record.getCoverLetterDocumentGroundingState(),
                         record,
@@ -322,6 +354,9 @@ public class ApplicationAppliedFreezeTransaction {
                         record.getApplicationUsedCvDocumentFamilyId(),
                         record.getApplicationUsedCvDocumentVersion(),
                         record.getApplicationUsedCvDocumentContentSha256(),
+                        record.getApplicationUsedCvDocumentSourceType(),
+                        record.getApplicationUsedCvDocumentOriginalContentSha256(),
+                        record.getApplicationUsedCvDocumentSelectedAt(),
                         record.getApplicationUsedCvEvidenceProvenance(),
                         record.getApplicationUsedCvGroundingState(),
                         record,
@@ -332,6 +367,9 @@ public class ApplicationAppliedFreezeTransaction {
                         record.getApplicationUsedCoverLetterDocumentFamilyId(),
                         record.getApplicationUsedCoverLetterDocumentVersion(),
                         record.getApplicationUsedCoverLetterDocumentContentSha256(),
+                        record.getApplicationUsedCoverLetterDocumentSourceType(),
+                        record.getApplicationUsedCoverLetterDocumentOriginalContentSha256(),
+                        record.getApplicationUsedCoverLetterDocumentSelectedAt(),
                         record.getApplicationUsedCoverLetterEvidenceProvenance(),
                         record.getApplicationUsedCoverLetterGroundingState(),
                         record,
@@ -352,6 +390,9 @@ public class ApplicationAppliedFreezeTransaction {
             String familyId,
             Integer version,
             String sha256,
+            com.jobseekercopilot.applicationtracker.dto.DocumentSourceType sourceType,
+            String originalContentSha256,
+            LocalDateTime selectedAt,
             com.jobseekercopilot.applicationtracker.dto.DocumentEvidenceProvenance provenance,
             com.jobseekercopilot.applicationtracker.dto.DocumentGroundingState groundingState,
             ApplicationRecord record,
@@ -364,12 +405,16 @@ public class ApplicationAppliedFreezeTransaction {
         }
         try {
             return DocumentVersionReference.builder()
+                    .ownerId(record.getUserId())
                     .documentId(UUID.fromString(documentId))
                     .documentFamilyId(UUID.fromString(familyId))
-                    .jobId(record.getJobId())
+                    .jobId(selectionJobId(record))
                     .documentType(type)
                     .version(version)
                     .contentSha256(sha256)
+                    .sourceType(sourceType)
+                    .originalContentSha256(originalContentSha256)
+                    .selectedAt(selectedAt)
                     .evidenceProvenance(provenance)
                     .groundingState(groundingState)
                     .build();

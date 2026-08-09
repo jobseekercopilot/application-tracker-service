@@ -2,14 +2,14 @@
   "openapi" : "3.0.1",
   "info" : {
     "title" : "Jobseeker Copilot - Application Tracker API",
-    "description" : "Service for tracking job applications, their generated documents, and application status.\n\nThis service validates and stores exact approved Document Store version\nreferences. Current editable selections are separate from the immutable\nversions and explicit omissions frozen only when an application\nfirst enters APPLIED.\nAtomic document-selection commands require explicit SELECTED or OMITTED\nstate for both optional slots, an expected record version and a durable\nowner-scoped idempotency key.\nApplying requires expectedVersion and Idempotency-Key, re-verifies\nevery selected exact version, and commits both frozen slot states,\ntimestamps and content-free events atomically.\nDurable reconciliation verifies both reference sets against Document Store,\nrepairs only missing immutable metadata, and reports conflicts without\noverwriting historical evidence.\nOrdered Store lifecycle projections mark exact references archived,\ndeleted or purged. Purge keeps family/version identity and association\nhistory while scrubbing complete hashes and evidence details.\nIt does NOT store document contents.\n\nApplicationStatus values:\n- SAVED - Job has been saved to the claimant's applications\n- DOCUMENTS_GENERATED - Documents have been generated for the job\n- APPLIED - Application has been submitted\n- INTERVIEW - Interview stage\n- UNSUCCESSFUL - Application was unsuccessful\n- OFFER - Offer received\n- ACCEPTED - Offer accepted\n- REJECTED_BY_USER - Offer or opportunity rejected by the user\n- WITHDRAWN - User withdrew their application\n",
+    "description" : "Service for tracking job applications, their generated documents, and application status.\n\nThis service validates and stores exact approved Document Store version\nreferences. Current editable selections are separate from the immutable\nversions and explicit omissions frozen only when an application\nfirst enters APPLIED.\nAtomic document-selection commands require explicit SELECTED or OMITTED\nstate for both optional slots, an expected record version and a durable\nowner-scoped idempotency key.\nApplying requires expectedVersion and Idempotency-Key, re-verifies\nevery selected exact version, and commits both frozen slot states,\ntimestamps and content-free events atomically.\nDurable reconciliation verifies both reference sets against Document Store,\nrepairs only missing immutable metadata, and reports conflicts without\noverwriting historical evidence.\nOrdered Store lifecycle projections mark exact references archived,\ndeleted or purged. Purge keeps family/version identity and association\nhistory, exact hashes, source and selection time while scrubbing\ncontent-bearing evidence details. Purged content cannot be restored\ninto live use.\nIt does NOT store document contents.\n\nApplicationStatus values:\n- SAVED - Job has been saved to the claimant's applications\n- DOCUMENTS_GENERATED - Documents have been generated for the job\n- APPLIED - Application has been submitted\n- INTERVIEW - Interview stage\n- UNSUCCESSFUL - Application was unsuccessful\n- OFFER - Offer received\n- ACCEPTED - Offer accepted\n- REJECTED_BY_USER - Offer or opportunity rejected by the user\n- WITHDRAWN - User withdrew their application\n",
     "contact" : {
       "name" : "Jobseeker Copilot"
     },
     "license" : {
       "name" : "Proprietary and confidential"
     },
-    "version" : "4.7.0"
+    "version" : "4.8.0"
   },
   "servers" : [ {
     "url" : "http://localhost:8088",
@@ -67,8 +67,8 @@
           "required" : true
         },
         "responses" : {
-          "404" : {
-            "description" : "Application record not found",
+          "400" : {
+            "description" : "Invalid command, status or document reference",
             "content" : {
               "application/json" : {
                 "schema" : {
@@ -77,22 +77,8 @@
               }
             }
           },
-          "409" : {
-            "description" : "Stale record version or conflicting idempotency-key reuse",
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "oneOf" : [ {
-                    "$ref" : "#/components/schemas/ApplicationVersionConflictResponse"
-                  }, {
-                    "$ref" : "#/components/schemas/ErrorResponse"
-                  } ]
-                }
-              }
-            }
-          },
-          "400" : {
-            "description" : "Invalid command, status or document reference",
+          "503" : {
+            "description" : "Document reference validation unavailable",
             "content" : {
               "application/json" : {
                 "schema" : {
@@ -111,8 +97,22 @@
               }
             }
           },
-          "503" : {
-            "description" : "Document reference validation unavailable",
+          "409" : {
+            "description" : "Stale record version or conflicting idempotency-key reuse",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "oneOf" : [ {
+                    "$ref" : "#/components/schemas/ApplicationVersionConflictResponse"
+                  }, {
+                    "$ref" : "#/components/schemas/ErrorResponse"
+                  } ]
+                }
+              }
+            }
+          },
+          "404" : {
+            "description" : "Application record not found",
             "content" : {
               "application/json" : {
                 "schema" : {
@@ -133,7 +133,7 @@
       "put" : {
         "tags" : [ "Application Records" ],
         "summary" : "Project exact document availability into application history",
-        "description" : "Applies an ordered owner-scoped lifecycle projection. PURGED is terminal and scrubs complete hashes and evidence details while retaining exact family/version identity.",
+        "description" : "Applies an ordered owner-scoped lifecycle projection. PURGED is terminal, retains the minimal exact identity/hash/source/selection tombstone and scrubs content-bearing evidence details.",
         "operationId" : "updateDocumentAvailability",
         "parameters" : [ {
           "name" : "documentId",
@@ -554,22 +554,12 @@
           "required" : true
         },
         "responses" : {
-          "400" : {
-            "description" : "Invalid status value",
+          "200" : {
+            "description" : "Status updated successfully",
             "content" : {
               "application/json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "401" : {
-            "description" : "Missing or invalid authentication",
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/SecurityErrorResponse"
+                  "$ref" : "#/components/schemas/ApplicationRecordResponse"
                 }
               }
             }
@@ -584,12 +574,12 @@
               }
             }
           },
-          "409" : {
-            "description" : "Invalid lifecycle transition or stale/concurrent record version",
+          "401" : {
+            "description" : "Missing or invalid authentication",
             "content" : {
               "application/json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ErrorResponse"
+                  "$ref" : "#/components/schemas/SecurityErrorResponse"
                 }
               }
             }
@@ -604,12 +594,22 @@
               }
             }
           },
-          "200" : {
-            "description" : "Status updated successfully",
+          "400" : {
+            "description" : "Invalid status value",
             "content" : {
               "application/json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ApplicationRecordResponse"
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409" : {
+            "description" : "Invalid lifecycle transition or stale/concurrent record version",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1226,19 +1226,6 @@
           }
         } ],
         "responses" : {
-          "200" : {
-            "description" : "Owner-scoped application records",
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "type" : "array",
-                  "items" : {
-                    "$ref" : "#/components/schemas/ApplicationRecordResponse"
-                  }
-                }
-              }
-            }
-          },
           "401" : {
             "description" : "Missing, invalid or ambiguous authentication",
             "content" : {
@@ -1265,6 +1252,19 @@
               "application/json" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200" : {
+            "description" : "Owner-scoped application records",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/ApplicationRecordResponse"
+                  }
                 }
               }
             }
@@ -1596,26 +1596,6 @@
         },
         "description" : "Response containing application record details"
       },
-      "ApplicationVersionConflictResponse" : {
-        "type" : "object",
-        "properties" : {
-          "status" : {
-            "type" : "integer",
-            "format" : "int32"
-          },
-          "message" : {
-            "type" : "string"
-          },
-          "timestamp" : {
-            "type" : "string",
-            "format" : "date-time"
-          },
-          "currentApplication" : {
-            "$ref" : "#/components/schemas/ApplicationRecordResponse"
-          }
-        },
-        "description" : "Stale application command response with the authoritative current record"
-      },
       "DocumentEvidenceProvenance" : {
         "type" : "object",
         "properties" : {
@@ -1659,6 +1639,9 @@
       "DocumentVersionReference" : {
         "type" : "object",
         "properties" : {
+          "ownerId" : {
+            "type" : "string"
+          },
           "documentId" : {
             "type" : "string",
             "format" : "uuid"
@@ -1680,6 +1663,17 @@
           },
           "contentSha256" : {
             "type" : "string"
+          },
+          "sourceType" : {
+            "type" : "string",
+            "enum" : [ "GENERATED", "UPLOADED" ]
+          },
+          "originalContentSha256" : {
+            "type" : "string"
+          },
+          "selectedAt" : {
+            "type" : "string",
+            "format" : "date-time"
           },
           "evidenceProvenance" : {
             "$ref" : "#/components/schemas/DocumentEvidenceProvenance"
@@ -1753,6 +1747,26 @@
           }
         },
         "description" : "Non-sensitive identity and digest of the exact claim ledger\naccepted by generation validation.\n"
+      },
+      "ApplicationVersionConflictResponse" : {
+        "type" : "object",
+        "properties" : {
+          "status" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "timestamp" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "currentApplication" : {
+            "$ref" : "#/components/schemas/ApplicationRecordResponse"
+          }
+        },
+        "description" : "Stale application command response with the authoritative current record"
       },
       "UpdateDocumentAvailabilityRequest" : {
         "required" : [ "availability", "occurredAt" ],

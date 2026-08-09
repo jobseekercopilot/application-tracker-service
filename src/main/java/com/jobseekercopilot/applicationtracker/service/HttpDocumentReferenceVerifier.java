@@ -3,6 +3,7 @@ package com.jobseekercopilot.applicationtracker.service;
 import com.jobseekercopilot.applicationtracker.dto.DocumentType;
 import com.jobseekercopilot.applicationtracker.dto.DocumentEvidenceProvenance;
 import com.jobseekercopilot.applicationtracker.dto.DocumentGroundingState;
+import com.jobseekercopilot.applicationtracker.dto.DocumentSourceType;
 import com.jobseekercopilot.applicationtracker.dto.DocumentVersionReference;
 import com.jobseekercopilot.applicationtracker.exception.DocumentReferenceUnavailableException;
 import com.jobseekercopilot.applicationtracker.exception.InvalidDocumentReferenceException;
@@ -99,12 +100,16 @@ public class HttpDocumentReferenceVerifier implements DocumentReferenceVerifier 
                 throw new InvalidDocumentReferenceException();
             }
             return DocumentVersionReference.builder()
+                    .ownerId(ownerId)
                     .documentId(reference.getDocumentId())
                     .documentFamilyId(reference.getDocumentFamilyId())
                     .jobId(reference.getJobId())
                     .documentType(reference.getDocumentType())
                     .version(reference.getVersion())
                     .contentSha256(reference.getContentSha256())
+                    .sourceType(reference.getSourceType())
+                    .originalContentSha256(
+                            reference.getOriginalContentSha256())
                     .evidenceProvenance(reference.getEvidenceProvenance())
                     .groundingState(reference.getGroundingState())
                     .parentDocumentId(reference.getParentDocumentId())
@@ -146,10 +151,10 @@ public class HttpDocumentReferenceVerifier implements DocumentReferenceVerifier 
     private boolean validSource(
             DocumentStoreReferenceResponse reference,
             UUID expectedApplicationId) {
-        if ("GENERATED".equals(reference.getSourceType())) {
+        if (reference.getSourceType() == DocumentSourceType.GENERATED) {
             return true;
         }
-        return "UPLOADED".equals(reference.getSourceType())
+        return reference.getSourceType() == DocumentSourceType.UPLOADED
                 && expectedApplicationId != null
                 && reference.getOriginalContentSha256() != null
                 && SHA_256.matcher(reference.getOriginalContentSha256()).matches();
@@ -203,7 +208,7 @@ public class HttpDocumentReferenceVerifier implements DocumentReferenceVerifier 
         private Integer version;
         private String contentSha256;
         private String originalContentSha256;
-        private String sourceType;
+        private DocumentSourceType sourceType;
         private String lifecycleState;
         private DocumentEvidenceProvenance evidenceProvenance;
         private DocumentGroundingState groundingState;
