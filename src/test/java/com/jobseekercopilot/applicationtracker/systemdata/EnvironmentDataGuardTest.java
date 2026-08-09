@@ -22,6 +22,17 @@ class EnvironmentDataGuardTest {
     }
 
     @Test
+    void runtimeOwnerCleanupAlsoRequiresExplicitDatabaseIsolation() {
+        EnvironmentDataGuard guard = guard(
+                true, false, List.of("e2e"), "e2e");
+        assertForbidden(guard, true);
+
+        EnvironmentDataGuard isolated = guard(
+                true, true, List.of("e2e"), "e2e");
+        assertDoesNotThrow(isolated::requireRuntimeOwnerCleanup);
+    }
+
+    @Test
     void deniesDisabledDefaultUnknownProductionAndMixedProfiles() {
         assertForbidden(guard(false, List.of("e2e"), "e2e"));
         assertForbidden(guard(true, List.of("e2e")));
@@ -40,8 +51,17 @@ class EnvironmentDataGuardTest {
     }
 
     private void assertForbidden(EnvironmentDataGuard guard) {
+        assertForbidden(guard, false);
+    }
+
+    private void assertForbidden(
+            EnvironmentDataGuard guard, boolean runtimeOwnerCleanup) {
         ResponseStatusException exception =
-                assertThrows(ResponseStatusException.class, guard::requireEnabled);
+                assertThrows(
+                        ResponseStatusException.class,
+                        runtimeOwnerCleanup
+                                ? guard::requireRuntimeOwnerCleanup
+                                : guard::requireEnabled);
         assertEquals(403, exception.getStatusCode().value());
     }
 
@@ -49,8 +69,17 @@ class EnvironmentDataGuardTest {
             boolean enabled,
             List<String> allowedEnvironments,
             String... activeProfiles) {
+        return guard(enabled, false, allowedEnvironments, activeProfiles);
+    }
+
+    private EnvironmentDataGuard guard(
+            boolean enabled,
+            boolean isolatedDatabase,
+            List<String> allowedEnvironments,
+            String... activeProfiles) {
         EnvironmentDataProperties properties = new EnvironmentDataProperties();
         properties.setEnabled(enabled);
+        properties.setIsolatedDatabase(isolatedDatabase);
         properties.setAllowedEnvironments(allowedEnvironments);
         MockEnvironment environment = new MockEnvironment();
         environment.setActiveProfiles(activeProfiles);

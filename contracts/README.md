@@ -34,7 +34,7 @@ The OpenAPI `info.version` follows semantic versioning:
 - major: removed or renamed operations/fields, narrowed values, changed
   authentication, or any other consumer-breaking change.
 
-The contract is version `4.8.0`. It retains the explicitly defined owner-scoped
+The contract is version `4.9.0`. It retains the explicitly defined owner-scoped
 list boundary and lifecycle concurrency metadata from `2.1.0`, and replaces
 raw-entity, owner-wide System Data operations with a constrained versioned seed
 request and scenario-scoped seed/reset/verify operations. The minor version
@@ -76,6 +76,12 @@ time fields to current and frozen exact-version descriptors. No existing field,
 operation, authentication rule or enum value is removed. The ordered lifecycle
 projection keeps `PURGED` terminal and exposes the retained minimal tombstone
 without making deleted content live again.
+
+Version `4.9.0` adds an internal, environment-data-authenticated runtime-owner
+reset and verification boundary. It accepts only the deterministic synthetic
+owner derived from the named scenario and identity and is enabled only for an
+explicitly isolated non-production database. Existing public and System Data
+fixture operations are unchanged.
 
 The owner-scoped list operation explicitly defines its service-token/Bearer
 alternatives, success model, stable `401`, `403` and `404` error models, and

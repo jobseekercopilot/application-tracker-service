@@ -66,7 +66,7 @@ verification before building the image. The Docker build compiles the test
 sources but does not execute the PostgreSQL Testcontainers suite because a
 standard image build must not receive the host Docker socket.
 
-The version `4.8.0` contract retains the owner-scoped public list and lifecycle
+The version `4.9.0` contract retains the owner-scoped public list and lifecycle
 concurrency contracts while replacing the unsafe raw-entity System Data routes
 with a constrained, versioned, owner-and-scenario-scoped fixture boundary and
 adds backward-compatible activity-history, recoverable generated-withdrawal
@@ -103,6 +103,10 @@ timestamp for zero, one or two slots; archive/delete/purge projections never
 substitute another version. `PURGED` remains terminal and retains only the
 minimal exact ID/version/hash/source/time tombstone plus availability metadata,
 while content-bearing evidence provenance is removed.
+
+Version `4.9.0` adds an isolated-E2E-only internal runtime-owner cleanup and
+verification boundary for deterministic named-state identities. Existing
+public operations and versioned fixture routes are unchanged.
 
 Version `4.1.0` adds the authoritative `SAVED` lifecycle state. Existing
 manual/external requests still default to `APPLIED`; callers opt into `SAVED`
