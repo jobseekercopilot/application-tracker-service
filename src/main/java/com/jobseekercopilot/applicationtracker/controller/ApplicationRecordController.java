@@ -299,7 +299,7 @@ public class ApplicationRecordController {
     @PutMapping("/document/{documentId}/availability")
     @Operation(
             summary = "Project exact document availability into application history",
-            description = "Applies an ordered owner-scoped lifecycle projection. PURGED is terminal and scrubs complete hashes and evidence details while retaining exact family/version identity.")
+            description = "Applies an ordered owner-scoped lifecycle projection. PURGED is terminal, retains the minimal exact identity/hash/source/selection tombstone and scrubs content-bearing evidence details.")
     @SecurityRequirement(name = "serviceToken")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Availability projection applied or replayed"),

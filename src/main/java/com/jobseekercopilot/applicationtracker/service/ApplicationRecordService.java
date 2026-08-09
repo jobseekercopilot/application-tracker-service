@@ -163,6 +163,17 @@ public class ApplicationRecordService {
                         record.getCvDocumentId()))
                 ? DocumentType.CV
                 : DocumentType.COVER_LETTER;
+        LocalDateTime selectedAt = frozenCv
+                ? firstNonNull(
+                        record.getApplicationUsedCvDocumentSelectedAt(),
+                        record.getApplicationUsedAt())
+                : frozenCoverLetter
+                        ? firstNonNull(
+                                record.getApplicationUsedCoverLetterDocumentSelectedAt(),
+                                record.getApplicationUsedAt())
+                        : type == DocumentType.CV
+                                ? record.getCvDocumentSelectedAt()
+                                : record.getCoverLetterDocumentSelectedAt();
         return new DocumentApplicationAssociation(
                 record.getId(),
                 type,
@@ -170,7 +181,12 @@ public class ApplicationRecordService {
                         ? DocumentApplicationAssociationState.FROZEN_USED
                         : DocumentApplicationAssociationState.DRAFT_SELECTED,
                 record.getStatus(),
-                frozen ? record.getApplicationUsedAt() : null);
+                selectedAt);
+    }
+
+    private LocalDateTime firstNonNull(
+            LocalDateTime preferred, LocalDateTime fallback) {
+        return preferred == null ? fallback : preferred;
     }
 
     @Transactional
@@ -277,6 +293,7 @@ public class ApplicationRecordService {
                     ownerId,
                     request.getDocumentId(),
                     record.getJobId(),
+                    record.getId(),
                     DocumentType.CV);
             if (reference.equals(currentCvReference(record, Map.of()))) {
                 return mapToResponse(record);
@@ -287,6 +304,7 @@ public class ApplicationRecordService {
                     ownerId,
                     request.getDocumentId(),
                     record.getJobId(),
+                    record.getId(),
                     DocumentType.COVER_LETTER);
             if (reference.equals(
                     currentCoverLetterReference(record, Map.of()))) {
@@ -318,7 +336,9 @@ public class ApplicationRecordService {
             String ownerId, UUID id, ApplicationCommandActor actor) {
         ApplicationRecord record = findOwnedApplicationForUpdate(ownerId, id);
         requireNoActiveDocumentWorkflow(record);
-        if (record.getApplicationUsedCvDocumentId() != null) {
+        if (record.getApplicationUsedAt() != null
+                || record.getApplicationUsedCvDocumentId() != null
+                || record.getApplicationUsedCoverLetterDocumentId() != null) {
             throw new InvalidStatusException(
                     "Submitted applications require retention-aware deletion.");
         }
@@ -481,6 +501,10 @@ public class ApplicationRecordService {
         record.setCvDocumentFamilyId(reference.getDocumentFamilyId().toString());
         record.setCvDocumentVersion(reference.getVersion());
         record.setCvDocumentContentSha256(reference.getContentSha256());
+        record.setCvDocumentSourceType(reference.getSourceType());
+        record.setCvDocumentOriginalContentSha256(
+                reference.getOriginalContentSha256());
+        record.setCvDocumentSelectedAt(LocalDateTime.now(ZoneOffset.UTC));
         record.setCvDocumentEvidenceProvenance(
                 reference.getEvidenceProvenance());
         record.setCvDocumentGroundingState(reference.getGroundingState());
@@ -493,6 +517,11 @@ public class ApplicationRecordService {
                 reference.getDocumentFamilyId().toString());
         record.setCoverLetterDocumentVersion(reference.getVersion());
         record.setCoverLetterDocumentContentSha256(reference.getContentSha256());
+        record.setCoverLetterDocumentSourceType(reference.getSourceType());
+        record.setCoverLetterDocumentOriginalContentSha256(
+                reference.getOriginalContentSha256());
+        record.setCoverLetterDocumentSelectedAt(
+                LocalDateTime.now(ZoneOffset.UTC));
         record.setCoverLetterDocumentEvidenceProvenance(
                 reference.getEvidenceProvenance());
         record.setCoverLetterDocumentGroundingState(
@@ -505,12 +534,16 @@ public class ApplicationRecordService {
         return reference(
                 record.getCvDocumentId(),
                 record.getCvDocumentFamilyId(),
-                record.getJobId(),
+                selectionJobId(record),
                 DocumentType.CV,
                 record.getCvDocumentVersion(),
                 record.getCvDocumentContentSha256(),
+                record.getCvDocumentSourceType(),
+                record.getCvDocumentOriginalContentSha256(),
+                record.getCvDocumentSelectedAt(),
                 record.getCvDocumentEvidenceProvenance(),
                 record.getCvDocumentGroundingState(),
+                record.getUserId(),
                 availability);
     }
 
@@ -520,12 +553,16 @@ public class ApplicationRecordService {
         return reference(
                 record.getCoverLetterDocumentId(),
                 record.getCoverLetterDocumentFamilyId(),
-                record.getJobId(),
+                selectionJobId(record),
                 DocumentType.COVER_LETTER,
                 record.getCoverLetterDocumentVersion(),
                 record.getCoverLetterDocumentContentSha256(),
+                record.getCoverLetterDocumentSourceType(),
+                record.getCoverLetterDocumentOriginalContentSha256(),
+                record.getCoverLetterDocumentSelectedAt(),
                 record.getCoverLetterDocumentEvidenceProvenance(),
                 record.getCoverLetterDocumentGroundingState(),
+                record.getUserId(),
                 availability);
     }
 
@@ -535,12 +572,16 @@ public class ApplicationRecordService {
         return reference(
                 record.getApplicationUsedCvDocumentId(),
                 record.getApplicationUsedCvDocumentFamilyId(),
-                record.getJobId(),
+                selectionJobId(record),
                 DocumentType.CV,
                 record.getApplicationUsedCvDocumentVersion(),
                 record.getApplicationUsedCvDocumentContentSha256(),
+                record.getApplicationUsedCvDocumentSourceType(),
+                record.getApplicationUsedCvDocumentOriginalContentSha256(),
+                record.getApplicationUsedCvDocumentSelectedAt(),
                 record.getApplicationUsedCvEvidenceProvenance(),
                 record.getApplicationUsedCvGroundingState(),
+                record.getUserId(),
                 availability);
     }
 
@@ -550,12 +591,16 @@ public class ApplicationRecordService {
         return reference(
                 record.getApplicationUsedCoverLetterDocumentId(),
                 record.getApplicationUsedCoverLetterDocumentFamilyId(),
-                record.getJobId(),
+                selectionJobId(record),
                 DocumentType.COVER_LETTER,
                 record.getApplicationUsedCoverLetterDocumentVersion(),
                 record.getApplicationUsedCoverLetterDocumentContentSha256(),
+                record.getApplicationUsedCoverLetterDocumentSourceType(),
+                record.getApplicationUsedCoverLetterDocumentOriginalContentSha256(),
+                record.getApplicationUsedCoverLetterDocumentSelectedAt(),
                 record.getApplicationUsedCoverLetterEvidenceProvenance(),
                 record.getApplicationUsedCoverLetterGroundingState(),
+                record.getUserId(),
                 availability);
     }
 
@@ -566,8 +611,12 @@ public class ApplicationRecordService {
             DocumentType type,
             Integer version,
             String sha256,
+            com.jobseekercopilot.applicationtracker.dto.DocumentSourceType sourceType,
+            String originalContentSha256,
+            LocalDateTime selectedAt,
             DocumentEvidenceProvenance evidenceProvenance,
             DocumentGroundingState groundingState,
+            String ownerId,
             Map<UUID, DocumentAvailabilityProjection> availability) {
         if (documentId == null
                 || familyId == null
@@ -579,12 +628,16 @@ public class ApplicationRecordService {
             DocumentAvailabilityProjection projection =
                     availability.get(parsedDocumentId);
             return DocumentVersionReference.builder()
+                    .ownerId(ownerId)
                     .documentId(parsedDocumentId)
                     .documentFamilyId(UUID.fromString(familyId))
                     .jobId(jobId)
                     .documentType(type)
                     .version(version)
                     .contentSha256(sha256)
+                    .sourceType(sourceType)
+                    .originalContentSha256(originalContentSha256)
+                    .selectedAt(selectedAt)
                     .evidenceProvenance(evidenceProvenance)
                     .groundingState(groundingState)
                     .availability(projection == null
@@ -633,6 +686,13 @@ public class ApplicationRecordService {
         } catch (IllegalArgumentException exception) {
             return null;
         }
+    }
+
+    private String selectionJobId(ApplicationRecord record) {
+        return record.getCanonicalJobId() == null
+                        || record.getCanonicalJobId().isBlank()
+                ? record.getJobId()
+                : record.getCanonicalJobId();
     }
 
     private ApplicationRecord findOwnedApplication(String ownerId, UUID id) {

@@ -57,7 +57,9 @@ public class OpenApiConfig {
                                 overwriting historical evidence.
                                 Ordered Store lifecycle projections mark exact references archived,
                                 deleted or purged. Purge keeps family/version identity and association
-                                history while scrubbing complete hashes and evidence details.
+                                history, exact hashes, source and selection time while scrubbing
+                                content-bearing evidence details. Purged content cannot be restored
+                                into live use.
                                 It does NOT store document contents.
                                 
                                 ApplicationStatus values:
@@ -71,7 +73,7 @@ public class OpenApiConfig {
                                 - REJECTED_BY_USER - Offer or opportunity rejected by the user
                                 - WITHDRAWN - User withdrew their application
                                 """)
-                        .version("4.7.0")
+                        .version("4.8.0")
                         .contact(new Contact()
                                 .name("Jobseeker Copilot"))
                         .license(new License()

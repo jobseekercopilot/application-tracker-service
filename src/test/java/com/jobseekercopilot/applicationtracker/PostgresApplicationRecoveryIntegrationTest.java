@@ -51,7 +51,7 @@ class PostgresApplicationRecoveryIntegrationTest {
                         assertThat(((SQLException) error).getSQLState()).startsWith("28"));
 
         Flyway upgraded = flyway(POSTGRES.getJdbcUrl());
-        assertThat(upgraded.migrate().migrationsExecuted).isEqualTo(17);
+        assertThat(upgraded.migrate().migrationsExecuted).isEqualTo(18);
         upgraded.validate();
 
         try (Connection connection = primaryConnection()) {
@@ -202,6 +202,9 @@ class PostgresApplicationRecoveryIntegrationTest {
                 SELECT job_id, canonical_job_id, provider, external_job_id,
                        fixture_scenario_id,
                        cv_document_family_id,
+                       cv_document_source_type,
+                       cv_document_selected_at,
+                       cover_letter_document_selected_at,
                        application_used_cv_document_id,
                        application_used_cover_letter_document_id,
                        record_version,
@@ -223,6 +226,11 @@ class PostgresApplicationRecoveryIntegrationTest {
                         .isEqualTo("synthetic-legacy-job");
                 assertThat(result.getString("fixture_scenario_id")).isNull();
                 assertThat(result.getString("cv_document_family_id")).isNull();
+                assertThat(result.getString("cv_document_source_type")).isNull();
+                assertThat(result.getObject("cv_document_selected_at"))
+                        .isNotNull();
+                assertThat(result.getObject("cover_letter_document_selected_at"))
+                        .isNotNull();
                 assertThat(result.getString("application_used_cv_document_id")).isNull();
                 assertThat(result.getString("application_used_cover_letter_document_id")).isNull();
                 assertThat(result.getLong("record_version")).isZero();

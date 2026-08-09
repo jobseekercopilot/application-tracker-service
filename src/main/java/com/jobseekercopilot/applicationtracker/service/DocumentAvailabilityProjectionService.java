@@ -61,6 +61,11 @@ public class DocumentAvailabilityProjectionService {
             throw new InvalidRequestException(
                     "A stale document availability update cannot replace newer state.");
         }
+        if (projection.getAvailability() == DocumentAvailabilityState.PURGED
+                && request.availability() != DocumentAvailabilityState.PURGED) {
+            throw new InvalidRequestException(
+                    "Purged document content cannot be restored into live use.");
+        }
 
         projection.setAvailability(request.availability());
         projection.setUnavailableReason(unavailableReason);
@@ -97,23 +102,19 @@ public class DocumentAvailabilityProjectionService {
             ApplicationRecord record,
             String documentId) {
         if (documentId.equals(record.getCvDocumentId())) {
-            record.setCvDocumentContentSha256(null);
             record.setCvDocumentEvidenceProvenance(null);
             record.setCvDocumentGroundingState(null);
         }
         if (documentId.equals(record.getCoverLetterDocumentId())) {
-            record.setCoverLetterDocumentContentSha256(null);
             record.setCoverLetterDocumentEvidenceProvenance(null);
             record.setCoverLetterDocumentGroundingState(null);
         }
         if (documentId.equals(record.getApplicationUsedCvDocumentId())) {
-            record.setApplicationUsedCvDocumentContentSha256(null);
             record.setApplicationUsedCvEvidenceProvenance(null);
             record.setApplicationUsedCvGroundingState(null);
         }
         if (documentId.equals(
                 record.getApplicationUsedCoverLetterDocumentId())) {
-            record.setApplicationUsedCoverLetterDocumentContentSha256(null);
             record.setApplicationUsedCoverLetterEvidenceProvenance(null);
             record.setApplicationUsedCoverLetterGroundingState(null);
         }

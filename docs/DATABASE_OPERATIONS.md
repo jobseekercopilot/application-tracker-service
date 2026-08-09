@@ -111,9 +111,11 @@ slot states plus the durable owner-scoped apply-command ledger. It also permits
 one immutable event of each type for a resulting record version so the
 content-freeze fact and lifecycle transition are independently auditable.
 V15 adds one owner/document availability projection with ordered lifecycle
-time, stable unavailable reason and terminal `PURGED` state. Purge handling
-scrubs complete hashes and evidence details from matching current and frozen
-references while retaining exact family/version identity.
+time, stable unavailable reason and terminal `PURGED` state. V19 extends current
+and frozen references with source, original-byte hash and selection time. Purge
+handling retains the minimal exact ID/version/hash/source/time tombstone while
+scrubbing content-bearing evidence details; a later availability event cannot
+restore purged content into live use.
 
 ## Recovery objectives
 

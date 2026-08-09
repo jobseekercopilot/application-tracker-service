@@ -923,7 +923,7 @@ class ApplicationRecordControllerIntegrationTest {
     }
 
     @Test
-    void purgedAvailabilityKeepsExactIdentityAndScrubsHashesAndEvidence()
+    void purgedAvailabilityKeepsMinimalTombstoneAndCannotRestoreContent()
             throws Exception {
         LocalDateTime frozenAt = LocalDateTime.now().minusDays(3);
         ApplicationRecord saved = repository.saveAndFlush(
@@ -981,7 +981,7 @@ class ApplicationRecordControllerIntegrationTest {
                 .andExpect(jsonPath("$.cvDocumentReference.unavailableReason")
                         .value("PURGED_BY_APPROVED_RETENTION_POLICY"))
                 .andExpect(jsonPath("$.cvDocumentReference.contentSha256")
-                        .doesNotExist())
+                        .value("a".repeat(64)))
                 .andExpect(jsonPath("$.cvDocumentReference.evidenceProvenance")
                         .doesNotExist())
                 .andExpect(jsonPath(
@@ -989,14 +989,15 @@ class ApplicationRecordControllerIntegrationTest {
                         .value(CV_ID.toString()))
                 .andExpect(jsonPath(
                                 "$.applicationUsedCvDocumentReference.contentSha256")
-                        .doesNotExist());
+                        .value("a".repeat(64)));
 
         ApplicationRecord scrubbed = repository.findById(saved.getId())
                 .orElseThrow();
-        assertThat(scrubbed.getCvDocumentContentSha256()).isNull();
+        assertThat(scrubbed.getCvDocumentContentSha256())
+                .isEqualTo("a".repeat(64));
         assertThat(scrubbed.getCvDocumentEvidenceProvenance()).isNull();
         assertThat(scrubbed.getApplicationUsedCvDocumentContentSha256())
-                .isNull();
+                .isEqualTo("a".repeat(64));
         assertThat(scrubbed.getApplicationUsedCvEvidenceProvenance()).isNull();
 
         mockMvc.perform(put(

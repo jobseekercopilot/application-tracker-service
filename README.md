@@ -66,7 +66,7 @@ verification before building the image. The Docker build compiles the test
 sources but does not execute the PostgreSQL Testcontainers suite because a
 standard image build must not receive the host Docker socket.
 
-The version `4.7.0` contract retains the owner-scoped public list and lifecycle
+The version `4.8.0` contract retains the owner-scoped public list and lifecycle
 concurrency contracts while replacing the unsafe raw-entity System Data routes
 with a constrained, versioned, owner-and-scenario-scoped fixture boundary and
 adds backward-compatible activity-history, recoverable generated-withdrawal
@@ -94,6 +94,13 @@ content-free `APPLICATION_SAVED` activity. Other creation modes retain
 `APPLICATION_CREATED`, and idempotent creation replay does not duplicate either
 event.
 
+Version `4.8.0` adds owner, source, original-byte hash and selection time to
+current and frozen exact-version descriptors. Apply preserves the selected
+timestamp for zero, one or two slots; archive/delete/purge projections never
+substitute another version. `PURGED` remains terminal and retains only the
+minimal exact ID/version/hash/source/time tombstone plus availability metadata,
+while content-bearing evidence provenance is removed.
+
 Version `4.1.0` adds the authoritative `SAVED` lifecycle state. Existing
 manual/external requests still default to `APPLIED`; callers opt into `SAVED`
 explicitly and may attach validated documents before progressing.
@@ -116,7 +123,10 @@ Version `4.4.0` adds content-free exact-document association lookup and an
 ordered availability projection for archive, recoverable deletion, restore and
 purge. `PURGED` is terminal: Tracker retains exact application/family/version
 identity and draft/frozen association state while scrubbing complete hashes and
-evidence details. Cross-owner lookups return an empty authoritative snapshot.
+evidence details. Version `4.8.0` corrects that legacy projection behaviour:
+the approved minimal tombstone retains exact hashes, source and selection time
+while content-bearing evidence details are scrubbed. Cross-owner lookups return
+an empty authoritative snapshot.
 
 Version `4.5.0` adds a no-store account export and an internal, idempotent
 personal-data erasure step. The internal route accepts only a short-lived

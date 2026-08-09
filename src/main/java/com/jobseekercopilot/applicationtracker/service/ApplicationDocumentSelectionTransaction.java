@@ -15,6 +15,8 @@ import com.jobseekercopilot.applicationtracker.exception.ResourceNotFoundExcepti
 import com.jobseekercopilot.applicationtracker.repository.ApplicationDocumentSelectionCommandRepository;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationRecordRepository;
 import java.time.Instant;
+import java.time.Clock;
+import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +33,7 @@ public class ApplicationDocumentSelectionTransaction {
     private final ApplicationEventRecorder eventRecorder;
     private final ApplicationDocumentReconciliationService reconciliationService;
     private final ObjectMapper objectMapper;
+    private final Clock clock;
 
     @Transactional(readOnly = true, propagation = Propagation.REQUIRES_NEW)
     public Optional<ApplicationRecordResponse> findReplay(
@@ -99,8 +102,13 @@ public class ApplicationDocumentSelectionTransaction {
                     cv,
                     record.getCoverLetterDocumentId(),
                     coverLetter);
-            setCv(record, cv);
-            setCoverLetter(record, coverLetter);
+            LocalDateTime selectedAt = LocalDateTime.now(clock);
+            if (cvChanged) {
+                setCv(record, cv, selectedAt);
+            }
+            if (coverLetterChanged) {
+                setCoverLetter(record, coverLetter, selectedAt);
+            }
             ApplicationRecord updated = applicationRepository.saveAndFlush(record);
             eventRecorder.recordApplicationDocumentSelection(
                     updated, initialSelection, Instant.now(), actor, reason);
@@ -214,12 +222,21 @@ public class ApplicationDocumentSelectionTransaction {
     }
 
     private void setCv(
-            ApplicationRecord record, DocumentVersionReference reference) {
+            ApplicationRecord record,
+            DocumentVersionReference reference,
+            LocalDateTime selectedAt) {
         record.setCvDocumentId(value(reference, Value.DOCUMENT_ID));
         record.setCvDocumentFamilyId(value(reference, Value.FAMILY_ID));
         record.setCvDocumentVersion(reference == null ? null : reference.getVersion());
         record.setCvDocumentContentSha256(
                 reference == null ? null : reference.getContentSha256());
+        record.setCvDocumentSourceType(
+                reference == null ? null : reference.getSourceType());
+        record.setCvDocumentOriginalContentSha256(
+                reference == null
+                        ? null
+                        : reference.getOriginalContentSha256());
+        record.setCvDocumentSelectedAt(reference == null ? null : selectedAt);
         record.setCvDocumentEvidenceProvenance(
                 reference == null ? null : reference.getEvidenceProvenance());
         record.setCvDocumentGroundingState(
@@ -227,13 +244,23 @@ public class ApplicationDocumentSelectionTransaction {
     }
 
     private void setCoverLetter(
-            ApplicationRecord record, DocumentVersionReference reference) {
+            ApplicationRecord record,
+            DocumentVersionReference reference,
+            LocalDateTime selectedAt) {
         record.setCoverLetterDocumentId(value(reference, Value.DOCUMENT_ID));
         record.setCoverLetterDocumentFamilyId(value(reference, Value.FAMILY_ID));
         record.setCoverLetterDocumentVersion(
                 reference == null ? null : reference.getVersion());
         record.setCoverLetterDocumentContentSha256(
                 reference == null ? null : reference.getContentSha256());
+        record.setCoverLetterDocumentSourceType(
+                reference == null ? null : reference.getSourceType());
+        record.setCoverLetterDocumentOriginalContentSha256(
+                reference == null
+                        ? null
+                        : reference.getOriginalContentSha256());
+        record.setCoverLetterDocumentSelectedAt(
+                reference == null ? null : selectedAt);
         record.setCoverLetterDocumentEvidenceProvenance(
                 reference == null ? null : reference.getEvidenceProvenance());
         record.setCoverLetterDocumentGroundingState(
@@ -287,10 +314,14 @@ public class ApplicationDocumentSelectionTransaction {
                 record.getCvDocumentFamilyId(),
                 record.getCvDocumentVersion(),
                 record.getCvDocumentContentSha256(),
+                record.getCvDocumentSourceType(),
+                record.getCvDocumentOriginalContentSha256(),
+                record.getCvDocumentSelectedAt(),
                 record.getCvDocumentEvidenceProvenance(),
                 record.getCvDocumentGroundingState(),
                 com.jobseekercopilot.applicationtracker.dto.DocumentType.CV,
-                record.getJobId());
+                selectionJobId(record),
+                record.getUserId());
     }
 
     private DocumentVersionReference coverLetterReference(ApplicationRecord record) {
@@ -299,10 +330,14 @@ public class ApplicationDocumentSelectionTransaction {
                 record.getCoverLetterDocumentFamilyId(),
                 record.getCoverLetterDocumentVersion(),
                 record.getCoverLetterDocumentContentSha256(),
+                record.getCoverLetterDocumentSourceType(),
+                record.getCoverLetterDocumentOriginalContentSha256(),
+                record.getCoverLetterDocumentSelectedAt(),
                 record.getCoverLetterDocumentEvidenceProvenance(),
                 record.getCoverLetterDocumentGroundingState(),
                 com.jobseekercopilot.applicationtracker.dto.DocumentType.COVER_LETTER,
-                record.getJobId());
+                selectionJobId(record),
+                record.getUserId());
     }
 
     private DocumentVersionReference usedCvReference(ApplicationRecord record) {
@@ -311,10 +346,14 @@ public class ApplicationDocumentSelectionTransaction {
                 record.getApplicationUsedCvDocumentFamilyId(),
                 record.getApplicationUsedCvDocumentVersion(),
                 record.getApplicationUsedCvDocumentContentSha256(),
+                record.getApplicationUsedCvDocumentSourceType(),
+                record.getApplicationUsedCvDocumentOriginalContentSha256(),
+                record.getApplicationUsedCvDocumentSelectedAt(),
                 record.getApplicationUsedCvEvidenceProvenance(),
                 record.getApplicationUsedCvGroundingState(),
                 com.jobseekercopilot.applicationtracker.dto.DocumentType.CV,
-                record.getJobId());
+                selectionJobId(record),
+                record.getUserId());
     }
 
     private DocumentVersionReference usedCoverLetterReference(
@@ -324,10 +363,14 @@ public class ApplicationDocumentSelectionTransaction {
                 record.getApplicationUsedCoverLetterDocumentFamilyId(),
                 record.getApplicationUsedCoverLetterDocumentVersion(),
                 record.getApplicationUsedCoverLetterDocumentContentSha256(),
+                record.getApplicationUsedCoverLetterDocumentSourceType(),
+                record.getApplicationUsedCoverLetterDocumentOriginalContentSha256(),
+                record.getApplicationUsedCoverLetterDocumentSelectedAt(),
                 record.getApplicationUsedCoverLetterEvidenceProvenance(),
                 record.getApplicationUsedCoverLetterGroundingState(),
                 com.jobseekercopilot.applicationtracker.dto.DocumentType.COVER_LETTER,
-                record.getJobId());
+                selectionJobId(record),
+                record.getUserId());
     }
 
     private DocumentVersionReference reference(
@@ -335,10 +378,14 @@ public class ApplicationDocumentSelectionTransaction {
             String familyId,
             Integer version,
             String sha256,
+            com.jobseekercopilot.applicationtracker.dto.DocumentSourceType sourceType,
+            String originalContentSha256,
+            LocalDateTime selectedAt,
             com.jobseekercopilot.applicationtracker.dto.DocumentEvidenceProvenance provenance,
             com.jobseekercopilot.applicationtracker.dto.DocumentGroundingState groundingState,
             com.jobseekercopilot.applicationtracker.dto.DocumentType type,
-            String jobId) {
+            String jobId,
+            String ownerId) {
         if (documentId == null) {
             return null;
         }
@@ -347,12 +394,16 @@ public class ApplicationDocumentSelectionTransaction {
         }
         try {
             return DocumentVersionReference.builder()
+                    .ownerId(ownerId)
                     .documentId(UUID.fromString(documentId))
                     .documentFamilyId(UUID.fromString(familyId))
                     .jobId(jobId)
                     .documentType(type)
                     .version(version)
                     .contentSha256(sha256)
+                    .sourceType(sourceType)
+                    .originalContentSha256(originalContentSha256)
+                    .selectedAt(selectedAt)
                     .evidenceProvenance(provenance)
                     .groundingState(groundingState)
                     .build();
@@ -364,5 +415,12 @@ public class ApplicationDocumentSelectionTransaction {
     private enum Value {
         DOCUMENT_ID,
         FAMILY_ID
+    }
+
+    private String selectionJobId(ApplicationRecord record) {
+        return record.getCanonicalJobId() == null
+                        || record.getCanonicalJobId().isBlank()
+                ? record.getJobId()
+                : record.getCanonicalJobId();
     }
 }

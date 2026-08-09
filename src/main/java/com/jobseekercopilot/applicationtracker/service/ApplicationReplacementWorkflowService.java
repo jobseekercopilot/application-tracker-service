@@ -352,6 +352,11 @@ public class ApplicationReplacementWorkflowService {
             application.setCvDocumentVersion(reference.getVersion());
             application.setCvDocumentContentSha256(
                     reference.getContentSha256());
+            application.setCvDocumentSourceType(reference.getSourceType());
+            application.setCvDocumentOriginalContentSha256(
+                    reference.getOriginalContentSha256());
+            application.setCvDocumentSelectedAt(
+                    LocalDateTime.now(ZoneOffset.UTC));
             application.setCvDocumentEvidenceProvenance(
                     reference.getEvidenceProvenance());
             application.setCvDocumentGroundingState(
@@ -364,6 +369,12 @@ public class ApplicationReplacementWorkflowService {
             application.setCoverLetterDocumentVersion(reference.getVersion());
             application.setCoverLetterDocumentContentSha256(
                     reference.getContentSha256());
+            application.setCoverLetterDocumentSourceType(
+                    reference.getSourceType());
+            application.setCoverLetterDocumentOriginalContentSha256(
+                    reference.getOriginalContentSha256());
+            application.setCoverLetterDocumentSelectedAt(
+                    LocalDateTime.now(ZoneOffset.UTC));
             application.setCoverLetterDocumentEvidenceProvenance(
                     reference.getEvidenceProvenance());
             application.setCoverLetterDocumentGroundingState(

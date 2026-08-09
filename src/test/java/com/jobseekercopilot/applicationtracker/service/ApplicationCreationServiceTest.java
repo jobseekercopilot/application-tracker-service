@@ -17,6 +17,9 @@ import com.jobseekercopilot.applicationtracker.entity.ApplicationStatus;
 import com.jobseekercopilot.applicationtracker.exception.InvalidRequestException;
 import java.util.Optional;
 import java.util.UUID;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -44,7 +47,9 @@ class ApplicationCreationServiceTest {
     @BeforeEach
     void setUp() {
         service = new ApplicationCreationService(
-                transaction, documentReferenceVerifier);
+                transaction,
+                documentReferenceVerifier,
+                Clock.fixed(Instant.parse("2026-08-09T12:00:00Z"), ZoneOffset.UTC));
     }
 
     @Test
@@ -121,7 +126,12 @@ class ApplicationCreationServiceTest {
         assertThat(outcome.record().getAppliedAt()).isNotNull();
         assertThat(outcome.record().getCvDocumentId()).isNull();
         assertThat(outcome.record().getCoverLetterDocumentId()).isNull();
-        assertThat(outcome.record().getApplicationUsedAt()).isNull();
+        assertThat(outcome.record().getApplicationUsedAt())
+                .isEqualTo(outcome.record().getAppliedAt());
+        assertThat(outcome.record().getApplicationUsedCvState())
+                .isEqualTo(com.jobseekercopilot.applicationtracker.entity.FrozenDocumentSelectionState.OMITTED);
+        assertThat(outcome.record().getApplicationUsedCoverLetterState())
+                .isEqualTo(com.jobseekercopilot.applicationtracker.entity.FrozenDocumentSelectionState.OMITTED);
         assertThat(outcome.record().getProvider()).isEqualTo("MANUAL");
         verify(documentReferenceVerifier, never()).verify(
                 anyString(), any(UUID.class), anyString(), any(DocumentType.class));
