@@ -39,6 +39,26 @@ class AuthoritativeJobSourcePolicyTest {
     }
 
     @Test
+    void liveModeAcceptsTheOfficialCandidateHostReturnedByTheSelfServeFeed() {
+        String candidateListing =
+                "https://beta.jobs.nhs.uk/candidate/jobadvert/C123";
+
+        AuthoritativeJobSourcePolicy.SourceMetadata source =
+                new AuthoritativeJobSourcePolicy("LIVE").normalize(
+                        "NHS_JOBS",
+                        "C123",
+                        candidateListing,
+                        candidateListing,
+                        ATTRIBUTION,
+                        ATTRIBUTION_URL,
+                        LICENCE,
+                        DISCLAIMER);
+
+        assertThat(source.listingUrl()).isEqualTo(candidateListing);
+        assertThat(source.applyUrl()).isEqualTo(candidateListing);
+    }
+
+    @Test
     void liveModeRejectsFixtureUrlsAndMismatchedVacancyIdentity() {
         AuthoritativeJobSourcePolicy policy =
                 new AuthoritativeJobSourcePolicy("LIVE");

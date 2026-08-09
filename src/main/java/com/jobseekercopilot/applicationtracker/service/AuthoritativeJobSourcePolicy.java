@@ -84,14 +84,15 @@ public class AuthoritativeJobSourcePolicy {
         } catch (URISyntaxException exception) {
             throw invalidUrl(field);
         }
-        String expectedHost = nhsJobsMode == NhsJobsMode.LIVE
-                ? "www.jobs.nhs.uk"
-                : "fixtures.jobseekercopilot.test";
+        boolean approvedHost = nhsJobsMode == NhsJobsMode.LIVE
+                ? "www.jobs.nhs.uk".equalsIgnoreCase(uri.getHost())
+                        || "beta.jobs.nhs.uk".equalsIgnoreCase(uri.getHost())
+                : "fixtures.jobseekercopilot.test".equalsIgnoreCase(uri.getHost());
         String expectedPath = nhsJobsMode == NhsJobsMode.LIVE
                 ? "/candidate/jobadvert/" + externalJobId
                 : "/nhs-jobs/jobadvert/" + externalJobId;
         boolean approved = "https".equalsIgnoreCase(uri.getScheme())
-                && expectedHost.equalsIgnoreCase(uri.getHost())
+                && approvedHost
                 && uri.getPort() == -1
                 && uri.getUserInfo() == null
                 && expectedPath.equals(uri.getPath())
