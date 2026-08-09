@@ -1,6 +1,10 @@
 package com.jobseekercopilot.applicationtracker.entity;
 
+import com.jobseekercopilot.applicationtracker.dto.DocumentEvidenceProvenance;
+import com.jobseekercopilot.applicationtracker.dto.DocumentGroundingState;
+import com.jobseekercopilot.applicationtracker.dto.DocumentSourceType;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -92,6 +96,23 @@ public class ApplicationRecord {
     @Column(length = 64)
     private String cvDocumentContentSha256;
 
+    @Enumerated(EnumType.STRING)
+    @Column(length = 16)
+    private DocumentSourceType cvDocumentSourceType;
+
+    @Column(length = 64)
+    private String cvDocumentOriginalContentSha256;
+
+    private LocalDateTime cvDocumentSelectedAt;
+
+    @Convert(converter = DocumentEvidenceProvenanceConverter.class)
+    @Column(columnDefinition = "TEXT")
+    private DocumentEvidenceProvenance cvDocumentEvidenceProvenance;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 48)
+    private DocumentGroundingState cvDocumentGroundingState;
+
     private String coverLetterDocumentId;
 
     private String coverLetterDocumentFamilyId;
@@ -100,6 +121,23 @@ public class ApplicationRecord {
 
     @Column(length = 64)
     private String coverLetterDocumentContentSha256;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 16)
+    private DocumentSourceType coverLetterDocumentSourceType;
+
+    @Column(length = 64)
+    private String coverLetterDocumentOriginalContentSha256;
+
+    private LocalDateTime coverLetterDocumentSelectedAt;
+
+    @Convert(converter = DocumentEvidenceProvenanceConverter.class)
+    @Column(columnDefinition = "TEXT")
+    private DocumentEvidenceProvenance coverLetterDocumentEvidenceProvenance;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 48)
+    private DocumentGroundingState coverLetterDocumentGroundingState;
 
     private String applicationUsedCvDocumentId;
 
@@ -110,6 +148,29 @@ public class ApplicationRecord {
     @Column(length = 64)
     private String applicationUsedCvDocumentContentSha256;
 
+    @Enumerated(EnumType.STRING)
+    @Column(length = 16)
+    private DocumentSourceType applicationUsedCvDocumentSourceType;
+
+    @Column(length = 64)
+    private String applicationUsedCvDocumentOriginalContentSha256;
+
+    private LocalDateTime applicationUsedCvDocumentSelectedAt;
+
+    @Convert(converter = DocumentEvidenceProvenanceConverter.class)
+    @Column(columnDefinition = "TEXT")
+    private DocumentEvidenceProvenance applicationUsedCvEvidenceProvenance;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 48)
+    private DocumentGroundingState applicationUsedCvGroundingState;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    @Builder.Default
+    private FrozenDocumentSelectionState applicationUsedCvState =
+            FrozenDocumentSelectionState.UNKNOWN;
+
     private String applicationUsedCoverLetterDocumentId;
 
     private String applicationUsedCoverLetterDocumentFamilyId;
@@ -118,6 +179,30 @@ public class ApplicationRecord {
 
     @Column(length = 64)
     private String applicationUsedCoverLetterDocumentContentSha256;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 16)
+    private DocumentSourceType applicationUsedCoverLetterDocumentSourceType;
+
+    @Column(length = 64)
+    private String applicationUsedCoverLetterDocumentOriginalContentSha256;
+
+    private LocalDateTime applicationUsedCoverLetterDocumentSelectedAt;
+
+    @Convert(converter = DocumentEvidenceProvenanceConverter.class)
+    @Column(columnDefinition = "TEXT")
+    private DocumentEvidenceProvenance
+            applicationUsedCoverLetterEvidenceProvenance;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 48)
+    private DocumentGroundingState applicationUsedCoverLetterGroundingState;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    @Builder.Default
+    private FrozenDocumentSelectionState applicationUsedCoverLetterState =
+            FrozenDocumentSelectionState.UNKNOWN;
 
     private LocalDateTime applicationUsedAt;
 

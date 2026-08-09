@@ -2,6 +2,7 @@ package com.jobseekercopilot.applicationtracker.systemdata;
 
 import com.jobseekercopilot.applicationtracker.entity.ApplicationRecord;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationStatus;
+import com.jobseekercopilot.applicationtracker.dto.DocumentSourceType;
 import com.jobseekercopilot.applicationtracker.exception.InvalidRequestException;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationDocumentReconciliationRepository;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationRecordRepository;
@@ -131,9 +132,12 @@ public class SystemDataApplicationService {
             throw new InvalidRequestException(
                     "The fixture status requires an appliedAt timestamp.");
         }
-        if (record.status() == ApplicationStatus.DOCUMENTS_GENERATED && appliedAt != null) {
+        if ((record.status() == ApplicationStatus.SAVED
+                        || record.status()
+                                == ApplicationStatus.DOCUMENTS_GENERATED)
+                && appliedAt != null) {
             throw new InvalidRequestException(
-                    "DOCUMENTS_GENERATED fixtures cannot have an appliedAt timestamp.");
+                    "SAVED and DOCUMENTS_GENERATED fixtures cannot have an appliedAt timestamp.");
         }
         if (appliedAt != null
                 && (appliedAt.isBefore(record.createdAt())
@@ -162,13 +166,18 @@ public class SystemDataApplicationService {
         target.setCvDocumentFamilyId(source.cvDocumentFamilyId().toString());
         target.setCvDocumentVersion(source.cvDocumentVersion());
         target.setCvDocumentContentSha256(source.cvDocumentContentSha256());
+        target.setCvDocumentSourceType(DocumentSourceType.GENERATED);
+        target.setCvDocumentSelectedAt(source.updatedAt());
         target.setCoverLetterDocumentId(source.coverLetterDocumentId().toString());
         target.setCoverLetterDocumentFamilyId(
                 source.coverLetterDocumentFamilyId().toString());
         target.setCoverLetterDocumentVersion(source.coverLetterDocumentVersion());
         target.setCoverLetterDocumentContentSha256(
                 source.coverLetterDocumentContentSha256());
-        boolean progressed = source.status() != ApplicationStatus.DOCUMENTS_GENERATED;
+        target.setCoverLetterDocumentSourceType(DocumentSourceType.GENERATED);
+        target.setCoverLetterDocumentSelectedAt(source.updatedAt());
+        boolean progressed = source.status() != ApplicationStatus.SAVED
+                && source.status() != ApplicationStatus.DOCUMENTS_GENERATED;
         target.setApplicationUsedCvDocumentId(
                 progressed ? source.cvDocumentId().toString() : null);
         target.setApplicationUsedCvDocumentFamilyId(
@@ -177,6 +186,10 @@ public class SystemDataApplicationService {
                 progressed ? source.cvDocumentVersion() : null);
         target.setApplicationUsedCvDocumentContentSha256(
                 progressed ? source.cvDocumentContentSha256() : null);
+        target.setApplicationUsedCvDocumentSourceType(
+                progressed ? DocumentSourceType.GENERATED : null);
+        target.setApplicationUsedCvDocumentSelectedAt(
+                progressed ? source.updatedAt() : null);
         target.setApplicationUsedCoverLetterDocumentId(
                 progressed ? source.coverLetterDocumentId().toString() : null);
         target.setApplicationUsedCoverLetterDocumentFamilyId(
@@ -185,6 +198,10 @@ public class SystemDataApplicationService {
                 progressed ? source.coverLetterDocumentVersion() : null);
         target.setApplicationUsedCoverLetterDocumentContentSha256(
                 progressed ? source.coverLetterDocumentContentSha256() : null);
+        target.setApplicationUsedCoverLetterDocumentSourceType(
+                progressed ? DocumentSourceType.GENERATED : null);
+        target.setApplicationUsedCoverLetterDocumentSelectedAt(
+                progressed ? source.updatedAt() : null);
         target.setApplicationUsedAt(progressed ? source.appliedAt() : null);
         target.setStatus(source.status());
         target.setCreatedAt(source.createdAt());

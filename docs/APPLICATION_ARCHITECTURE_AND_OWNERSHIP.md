@@ -104,7 +104,7 @@ flowchart LR
 | Current application lifecycle state | Application Tracker | Enforces the approved transition matrix and optimistic version. Consumers display but do not remap or override it. |
 | Application activity history and milestone times | Application Tracker | Append-only events hold actual and recorded times; `updatedAt` is not history and must not be presented as one. |
 | Current application document selection | Application Tracker | Stores an owner-validated Document Store version reference while the record is editable. |
-| Document version used for an application | Application Tracker | Atomically freezes the exact IDs, families, versions and hashes when the application first progresses. |
+| Document version used for an application | Application Tracker | On the first successful transition to `APPLIED`, atomically freezes each exact selected ID, family, version and hash plus each explicit omission. |
 | Document content, type, approval, family/version, hash and retention | Document Store | Tracker references and validates these facts; it never stores content. |
 | Document-to-application reverse index or retention pin | Document Store | A projection derived from an accepted Tracker command. It is not allowed to contradict Tracker application state. |
 | Match/enrichment result | Job Matching | Ephemeral derivation of Job Service facts plus Tracker state. Only stable canonical or provider/external identity is authoritative. |
@@ -121,7 +121,7 @@ rebuildable projection.
 | --- | --- | --- | --- |
 | Create application | Explicit user-delegated workflow, or an approved producer acting for a trusted inbound subject | Application Tracker | Idempotent independently of generation; validate canonical job snapshot and both approved document references; return the same outcome after a lost response. |
 | List/get application | Bearer subject, or approved reader/producer with authenticated owner context | Application Tracker query model | Owner-scoped, non-enumerating and eventually paginated. |
-| Update status | Bearer subject through Job Finder | Application Tracker | Validate transition and expected version; atomically freeze application-used documents; append one event. |
+| Update status | Bearer subject through Job Finder | Application Tracker | Validate transition, expected version and owner-scoped idempotency key; on `APPLIED`, reverify and atomically freeze selections/omissions and append distinct freeze and status events. |
 | Replace current document | Bearer-delegated Document Generation workflow or approved producer | Application Tracker | Allowed only before freeze; validate the new Store reference; persist a durable outcome before updating projections. |
 | Withdraw generated-only record | Bearer subject through Job Finder | Application Tracker workflow | Record an idempotent durable outcome and coordinate Store cleanup recoverably; the gateway cannot silently swallow cleanup failure. |
 | Archive/delete | Bearer subject under approved retention policy | Application Tracker for the application; Document Store for content | Produce archive/tombstone and retention outcomes before physical removal. Submitted history is never hard-deleted ad hoc. |
@@ -135,7 +135,7 @@ rebuildable projection.
 | --- | --- | --- | --- |
 | Browser through BFF and Job Finder | RS256 access token with issuer, audience, expiry, `token_type=access` and nonblank `sub` | JWT `sub` only | Own application commands and queries. Browser `X-User-Id`, body or path values never grant ownership. |
 | CV/Cover Letter producer | Distinct producer identity injected at runtime | Trusted inbound subject forwarded as explicit owner context | Explicit idempotent create only; no status, withdraw or delete. Automatic create is transitional and removed by CVCL-01. |
-| Document Generation producer | Its own distinct producer identity | Trusted inbound subject forwarded as explicit owner context | Owner-scoped reads and pre-freeze reference commands only. |
+| Document Generation producer | Its own distinct producer identity | Trusted inbound subject forwarded as explicit owner context | Owner-scoped reads, pre-freeze reference commands and guarded `SAVED` lifecycle progression. |
 | Job Matching reader | Distinct read-only identity | Owner established by the authenticated upstream request | Owner-scoped read model only. |
 | Reporting reader | Distinct read-only identity | Owner validated by Reporting Gateway from the user access token | Owner-scoped current/event reads only. |
 | System Data | Independent environment-data identity plus exact E2E enablement | Versioned fixture envelope | Internal seed/reset/verify paths only. |

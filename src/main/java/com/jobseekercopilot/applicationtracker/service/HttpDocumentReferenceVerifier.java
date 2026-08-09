@@ -1,6 +1,9 @@
 package com.jobseekercopilot.applicationtracker.service;
 
 import com.jobseekercopilot.applicationtracker.dto.DocumentType;
+import com.jobseekercopilot.applicationtracker.dto.DocumentEvidenceProvenance;
+import com.jobseekercopilot.applicationtracker.dto.DocumentGroundingState;
+import com.jobseekercopilot.applicationtracker.dto.DocumentSourceType;
 import com.jobseekercopilot.applicationtracker.dto.DocumentVersionReference;
 import com.jobseekercopilot.applicationtracker.exception.DocumentReferenceUnavailableException;
 import com.jobseekercopilot.applicationtracker.exception.InvalidDocumentReferenceException;
@@ -61,6 +64,16 @@ public class HttpDocumentReferenceVerifier implements DocumentReferenceVerifier 
             UUID documentId,
             String expectedJobId,
             DocumentType expectedType) {
+        return verify(ownerId, documentId, expectedJobId, null, expectedType);
+    }
+
+    @Override
+    public DocumentVersionReference verify(
+            String ownerId,
+            UUID documentId,
+            String expectedJobId,
+            UUID expectedApplicationId,
+            DocumentType expectedType) {
         if (!StringUtils.hasText(documentStoreBaseUrl)
                 || !StringUtils.hasText(readerToken)) {
             throw new DocumentReferenceUnavailableException();
@@ -78,16 +91,30 @@ public class HttpDocumentReferenceVerifier implements DocumentReferenceVerifier 
                             DocumentStoreReferenceResponse.class,
                             documentId);
             DocumentStoreReferenceResponse reference = response.getBody();
-            if (!eligible(reference, documentId, expectedJobId, expectedType)) {
+            if (!eligible(
+                    reference,
+                    documentId,
+                    expectedJobId,
+                    expectedApplicationId,
+                    expectedType)) {
                 throw new InvalidDocumentReferenceException();
             }
             return DocumentVersionReference.builder()
+                    .ownerId(ownerId)
                     .documentId(reference.getDocumentId())
                     .documentFamilyId(reference.getDocumentFamilyId())
                     .jobId(reference.getJobId())
                     .documentType(reference.getDocumentType())
                     .version(reference.getVersion())
                     .contentSha256(reference.getContentSha256())
+                    .sourceType(reference.getSourceType())
+                    .originalContentSha256(
+                            reference.getOriginalContentSha256())
+                    .evidenceProvenance(reference.getEvidenceProvenance())
+                    .groundingState(reference.getGroundingState())
+                    .parentDocumentId(reference.getParentDocumentId())
+                    .parentDocumentVersion(
+                            reference.getParentDocumentVersion())
                     .build();
         } catch (HttpClientErrorException exception) {
             throw new InvalidDocumentReferenceException();
@@ -102,17 +129,65 @@ public class HttpDocumentReferenceVerifier implements DocumentReferenceVerifier 
             DocumentStoreReferenceResponse reference,
             UUID documentId,
             String expectedJobId,
+            UUID expectedApplicationId,
             DocumentType expectedType) {
         return reference != null
                 && documentId.equals(reference.getDocumentId())
                 && reference.getDocumentFamilyId() != null
                 && expectedJobId.equals(reference.getJobId())
+                && (expectedApplicationId == null
+                        || expectedApplicationId.toString().equals(
+                                reference.getApplicationId()))
                 && expectedType == reference.getDocumentType()
                 && reference.getVersion() != null
                 && reference.getVersion() >= 1
                 && reference.getContentSha256() != null
                 && SHA_256.matcher(reference.getContentSha256()).matches()
-                && "APPROVED".equals(reference.getLifecycleState());
+                && "APPROVED".equals(reference.getLifecycleState())
+                && validSource(reference, expectedApplicationId)
+                && validProvenance(reference);
+    }
+
+    private boolean validSource(
+            DocumentStoreReferenceResponse reference,
+            UUID expectedApplicationId) {
+        if (reference.getSourceType() == DocumentSourceType.GENERATED) {
+            return true;
+        }
+        return reference.getSourceType() == DocumentSourceType.UPLOADED
+                && expectedApplicationId != null
+                && reference.getOriginalContentSha256() != null
+                && SHA_256.matcher(reference.getOriginalContentSha256()).matches();
+    }
+
+    private boolean validProvenance(
+            DocumentStoreReferenceResponse reference) {
+        DocumentEvidenceProvenance provenance =
+                reference.getEvidenceProvenance();
+        if (provenance == null) {
+            return reference.getGroundingState() == null
+                    || reference.getGroundingState()
+                    == DocumentGroundingState.LEGACY_UNSPECIFIED
+                    || reference.getGroundingState()
+                    == DocumentGroundingState.USER_EDITED_REVIEW_REQUIRED;
+        }
+        return provenance.profileRevisionId() != null
+                && sha256(provenance.profileContentDigest())
+                && provenance.evidenceSnapshotId() != null
+                && sha256(provenance.evidenceSnapshotDigest())
+                && provenance.evidenceRevisions() != null
+                && !provenance.evidenceRevisions().isEmpty()
+                && provenance.sectionOrder() != null
+                && !provenance.sectionOrder().isEmpty()
+                && provenance.claimLedger() != null
+                && provenance.claimLedger().ledgerId() != null
+                && sha256(provenance.claimLedger().ledgerSha256())
+                && provenance.generatedAt() != null
+                && reference.getGroundingState() != null;
+    }
+
+    private boolean sha256(String value) {
+        return value != null && SHA_256.matcher(value).matches();
     }
 
     private static String stripTrailingSlash(String value) {
@@ -128,9 +203,16 @@ public class HttpDocumentReferenceVerifier implements DocumentReferenceVerifier 
         private UUID documentId;
         private UUID documentFamilyId;
         private String jobId;
+        private String applicationId;
         private DocumentType documentType;
         private Integer version;
         private String contentSha256;
+        private String originalContentSha256;
+        private DocumentSourceType sourceType;
         private String lifecycleState;
+        private DocumentEvidenceProvenance evidenceProvenance;
+        private DocumentGroundingState groundingState;
+        private UUID parentDocumentId;
+        private Integer parentDocumentVersion;
     }
 }

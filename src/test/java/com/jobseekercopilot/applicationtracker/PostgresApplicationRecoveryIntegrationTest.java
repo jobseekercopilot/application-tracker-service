@@ -51,7 +51,7 @@ class PostgresApplicationRecoveryIntegrationTest {
                         assertThat(((SQLException) error).getSQLState()).startsWith("28"));
 
         Flyway upgraded = flyway(POSTGRES.getJdbcUrl());
-        assertThat(upgraded.migrate().migrationsExecuted).isEqualTo(10);
+        assertThat(upgraded.migrate().migrationsExecuted).isEqualTo(19);
         upgraded.validate();
 
         try (Connection connection = primaryConnection()) {
@@ -60,6 +60,7 @@ class PostgresApplicationRecoveryIntegrationTest {
             assertFixtureIndexIsScoped(connection);
             assertLegacySnapshotEvent(connection, applicationId);
             assertLegacyReconciliationPending(connection, applicationId);
+            assertSavedStatusConstraints(connection);
         }
 
         // Discard application-side Flyway/JDBC state and repeat the startup path
@@ -201,6 +202,9 @@ class PostgresApplicationRecoveryIntegrationTest {
                 SELECT job_id, canonical_job_id, provider, external_job_id,
                        fixture_scenario_id,
                        cv_document_family_id,
+                       cv_document_source_type,
+                       cv_document_selected_at,
+                       cover_letter_document_selected_at,
                        application_used_cv_document_id,
                        application_used_cover_letter_document_id,
                        record_version,
@@ -222,6 +226,11 @@ class PostgresApplicationRecoveryIntegrationTest {
                         .isEqualTo("synthetic-legacy-job");
                 assertThat(result.getString("fixture_scenario_id")).isNull();
                 assertThat(result.getString("cv_document_family_id")).isNull();
+                assertThat(result.getString("cv_document_source_type")).isNull();
+                assertThat(result.getObject("cv_document_selected_at"))
+                        .isNotNull();
+                assertThat(result.getObject("cover_letter_document_selected_at"))
+                        .isNotNull();
                 assertThat(result.getString("application_used_cv_document_id")).isNull();
                 assertThat(result.getString("application_used_cover_letter_document_id")).isNull();
                 assertThat(result.getLong("record_version")).isZero();
@@ -315,6 +324,90 @@ class PostgresApplicationRecoveryIntegrationTest {
                         .isZero();
                 assertThat(result.next()).isFalse();
             }
+        }
+    }
+
+    private void assertSavedStatusConstraints(Connection connection)
+            throws SQLException {
+        UUID savedId = UUID.randomUUID();
+        try (PreparedStatement statement = connection.prepareStatement("""
+                INSERT INTO application_records (
+                    id, user_id, job_id, canonical_job_id, provider,
+                    external_job_id, provenance, job_title, company_name,
+                    status, created_at, updated_at, record_version
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'SAVED', ?, ?, 0)
+                """)) {
+            LocalDateTime now = LocalDateTime.now();
+            statement.setObject(1, savedId);
+            statement.setString(2, "saved-owner");
+            statement.setString(3, "saved-job");
+            statement.setString(4, "saved-job");
+            statement.setString(5, "MANUAL");
+            statement.setString(6, "saved-job");
+            statement.setString(7, "MANUAL");
+            statement.setString(8, "Saved developer role");
+            statement.setString(9, "Example Employer");
+            statement.setObject(10, now);
+            statement.setObject(11, now);
+            assertThat(statement.executeUpdate()).isEqualTo(1);
+        }
+        try (PreparedStatement event = connection.prepareStatement("""
+                INSERT INTO application_events (
+                    id, application_id, user_id, event_type, from_status,
+                    to_status, actor_type, actor_id, source, occurred_at,
+                    recorded_at, record_version
+                ) VALUES (
+                    ?, ?, 'saved-owner', 'APPLICATION_SAVED', NULL,
+                    'SAVED', 'USER', 'saved-owner', 'USER',
+                    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0
+                )
+                """)) {
+            event.setObject(1, UUID.randomUUID());
+            event.setObject(2, savedId);
+            assertThat(event.executeUpdate()).isEqualTo(1);
+        }
+
+        UUID explicitlyOmittedId =
+                insertManualDocumentsGenerated(connection, false);
+        UUID preparedId =
+                insertManualDocumentsGenerated(connection, true);
+        try (PreparedStatement delete = connection.prepareStatement(
+                "DELETE FROM application_records WHERE id IN (?, ?)")) {
+            delete.setObject(1, explicitlyOmittedId);
+            delete.setObject(2, preparedId);
+            assertThat(delete.executeUpdate()).isEqualTo(2);
+        }
+    }
+
+    private UUID insertManualDocumentsGenerated(
+            Connection connection, boolean completePair) throws SQLException {
+        UUID id = UUID.randomUUID();
+        try (PreparedStatement statement = connection.prepareStatement("""
+                INSERT INTO application_records (
+                    id, user_id, job_id, canonical_job_id, provider,
+                    external_job_id, provenance, job_title, company_name,
+                    cv_document_id, cover_letter_document_id, status,
+                    created_at, updated_at, record_version
+                ) VALUES (
+                    ?, 'prepared-owner', ?, ?, 'REED', ?, 'MANUAL',
+                    'Prepared developer role', 'Example Employer', ?, ?,
+                    'DOCUMENTS_GENERATED', ?, ?, 0
+                )
+                """)) {
+            String jobId = "prepared-" + id;
+            LocalDateTime now = LocalDateTime.now();
+            statement.setObject(1, id);
+            statement.setString(2, jobId);
+            statement.setString(3, jobId);
+            statement.setString(4, jobId);
+            statement.setString(
+                    5, completePair ? UUID.randomUUID().toString() : null);
+            statement.setString(
+                    6, completePair ? UUID.randomUUID().toString() : null);
+            statement.setObject(7, now);
+            statement.setObject(8, now);
+            assertThat(statement.executeUpdate()).isEqualTo(1);
+            return id;
         }
     }
 

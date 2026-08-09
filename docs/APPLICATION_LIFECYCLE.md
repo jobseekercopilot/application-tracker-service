@@ -6,6 +6,7 @@ Application Tracker accepts only these forward status changes:
 
 | Current status | Allowed next status |
 | --- | --- |
+| `SAVED` | `DOCUMENTS_GENERATED`, `APPLIED` |
 | `DOCUMENTS_GENERATED` | `APPLIED` |
 | `APPLIED` | `INTERVIEW`, `OFFER`, `UNSUCCESSFUL`, `WITHDRAWN` |
 | `INTERVIEW` | `OFFER`, `UNSUCCESSFUL`, `WITHDRAWN` |
@@ -25,12 +26,19 @@ Generated-only withdrawal remains the dedicated
 document and retention behavior remains subject to APP-09 and is not a status
 transition.
 
+`SAVED` is the authoritative “saved to applications” state. It does not imply
+that generation or submission occurred. A `SAVED` record may move to
+`DOCUMENTS_GENERATED` only after both current references have been owner,
+job, type and approval validated. It may move to `APPLIED` with none, CV only,
+cover letter only or both. Every present exact reference is reverified, and
+each selected or explicitly omitted slot is frozen atomically.
+
 ## Idempotent retries
 
-Sending the record's current status again returns HTTP `200` with the current
-representation. It performs no write and does not change `version`, `updatedAt`
-or `appliedAt`. This remains true when `expectedVersion` is stale: it lets a
-caller safely retry a command whose first successful response was lost.
+The transition to `APPLIED` requires `expectedVersion` and an owner-scoped
+`Idempotency-Key`. Replaying the same key and payload returns the original
+outcome without another write or event. Reusing the key with another payload,
+or sending a new command after APPLIED, returns conflict.
 
 ## Optimistic concurrency contract
 
@@ -72,6 +80,7 @@ current and requested statuses. It never mutates the stored row.
 - `updatedAt` changes only when a permitted transition is successfully stored.
 - `appliedAt` is assigned on the first successful transition to `APPLIED` and
   is never overwritten by later transitions.
+- `SAVED` and `DOCUMENTS_GENERATED` never assign `appliedAt`.
 - invalid, stale, concurrent-losing and same-status commands do not change
   lifecycle timestamps or append events.
 
@@ -86,6 +95,19 @@ V5 adds optimistic record versions. V7 adds the append-only event table,
 truthful legacy snapshots and the database mutation-rejection trigger. Both
 are additive, forward-only migrations. Deploy the producer before consumers
 begin sending `expectedVersion`, `occurredAt` or history queries.
+
+V12 adds `SAVED` to the record and immutable-event constraints while preserving
+all existing statuses and rows. It also permits non-generated records to enter
+`DOCUMENTS_GENERATED` only when both current document IDs are present.
+
+V13 adds the durable owner-scoped document-selection command ledger. It also
+removes the database complete-pair constraints because an explicit atomic Save
+may omit either optional slot while `SAVED` or `DOCUMENTS_GENERATED`; service
+validation still enforces creation and lifecycle-transition prerequisites.
+Deploy the V13-capable producer before clients send the new complete-selection
+request. Older producers and clients continue to use the deprecated one-slot
+operation during the rolling window and cannot interpret a missing new slot as
+an intentional omission.
 
 Rollback restores the previous compatible producer and database recovery point
 according to `DATABASE_OPERATIONS.md`. Do not remove or reuse the V5 column in

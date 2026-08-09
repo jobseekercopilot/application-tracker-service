@@ -28,8 +28,8 @@ identity.
 | `provenance` | Initial status | Document rule | Intended use |
 | --- | --- | --- | --- |
 | `GENERATED` | `DOCUMENTS_GENERATED` or `APPLIED` | Both approved CV and cover-letter version references are required | A deliberate application command using generated documents |
-| `MANUAL` | `APPLIED` | CV and cover-letter references are independently optional | An application the user records after applying outside the product |
-| `EXTERNAL` | `APPLIED` | CV and cover-letter references are independently optional | An application submitted through another system or provider |
+| `MANUAL` | `APPLIED` by default; explicit `SAVED` allowed | CV and cover-letter references are independently optional while saved | A job saved in the product, or an application the user records after applying outside it |
+| `EXTERNAL` | `APPLIED` by default; explicit `SAVED` allowed | CV and cover-letter references are independently optional while saved | A provider job saved in the product, or an application submitted through another system |
 
 `MANUAL` and `EXTERNAL` commands must carry `canonicalJobId`, `provider` and
 `externalJobId`. Values are normalized and syntax checked. Existing generated
@@ -40,6 +40,13 @@ as Job Service-verified provenance.
 When a command starts as `APPLIED`, any supplied approved document versions are
 frozen as the application-used versions in the same database commit. No
 document content is copied into Application Tracker.
+
+An explicit `SAVED` command preserves the pre-application state and does not set
+`appliedAt` or freeze document references. Approved CV and cover-letter
+references may be attached independently while saved. Progression to
+`DOCUMENTS_GENERATED` requires a complete, healthy pair. Progression directly
+to `APPLIED` accepts either no references or a complete, healthy pair; a
+partial pair is rejected.
 
 ## Idempotency and duplicate policy
 
@@ -69,7 +76,7 @@ PostgreSQL enforces:
 - unique non-null `(user_id, idempotency_key)`;
 - unique non-fixture `(user_id, canonical_job_id)`;
 - paired key/fingerprint presence;
-- valid provenance values and provenance/status combinations;
+- valid provenance values and lifecycle/document combinations;
 - both generated-document references for `GENERATED` records.
 
 Concurrent requests may reach the unique constraint together. The losing

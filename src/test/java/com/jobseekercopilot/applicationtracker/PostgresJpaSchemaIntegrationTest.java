@@ -11,19 +11,32 @@ import com.jobseekercopilot.applicationtracker.entity.ApplicationProvenance;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationStatus;
 import com.jobseekercopilot.applicationtracker.dto.CreateApplicationRequest;
 import com.jobseekercopilot.applicationtracker.dto.DocumentType;
+import com.jobseekercopilot.applicationtracker.dto.DocumentSelectionCommand;
+import com.jobseekercopilot.applicationtracker.dto.DocumentSelectionState;
 import com.jobseekercopilot.applicationtracker.dto.DocumentVersionReference;
+import com.jobseekercopilot.applicationtracker.dto.DocumentAvailabilityState;
+import com.jobseekercopilot.applicationtracker.dto.DocumentSourceType;
+import com.jobseekercopilot.applicationtracker.dto.UpdateDocumentAvailabilityRequest;
+import com.jobseekercopilot.applicationtracker.dto.SaveDocumentSelectionsRequest;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationRecordRepository;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationEventRepository;
+import com.jobseekercopilot.applicationtracker.repository.DocumentAvailabilityProjectionRepository;
 import com.jobseekercopilot.applicationtracker.service.ApplicationCreationResult;
 import com.jobseekercopilot.applicationtracker.service.ApplicationHistoryService;
 import com.jobseekercopilot.applicationtracker.service.ApplicationRecordService;
+import com.jobseekercopilot.applicationtracker.service.ApplicationCommandActor;
+import com.jobseekercopilot.applicationtracker.service.ApplicationDocumentSelectionService;
 import com.jobseekercopilot.applicationtracker.service.DocumentReferenceVerifier;
+import com.jobseekercopilot.applicationtracker.service.DocumentAvailabilityProjectionService;
+import com.jobseekercopilot.applicationtracker.service.ApplicationAccountLifecycleService;
+import com.jobseekercopilot.applicationtracker.exception.InvalidRequestException;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.RollbackException;
 import java.util.List;
 import java.sql.SQLException;
 import java.util.UUID;
+import java.time.LocalDateTime;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -89,6 +102,18 @@ class PostgresJpaSchemaIntegrationTest {
     @Autowired
     private ApplicationRecordService service;
 
+    @Autowired
+    private ApplicationDocumentSelectionService documentSelectionService;
+
+    @Autowired
+    private DocumentAvailabilityProjectionService availabilityProjectionService;
+
+    @Autowired
+    private DocumentAvailabilityProjectionRepository availabilityProjectionRepository;
+
+    @Autowired
+    private ApplicationAccountLifecycleService accountLifecycleService;
+
     @MockBean
     private DocumentReferenceVerifier documentReferenceVerifier;
 
@@ -113,6 +138,32 @@ class PostgresJpaSchemaIntegrationTest {
                                     type == DocumentType.CV
                                             ? "a".repeat(64)
                                             : "b".repeat(64))
+                            .ownerId(invocation.getArgument(0))
+                            .sourceType(DocumentSourceType.GENERATED)
+                            .build();
+                });
+        when(documentReferenceVerifier.verify(
+                        anyString(),
+                        any(UUID.class),
+                        anyString(),
+                        any(UUID.class),
+                        any(DocumentType.class)))
+                .thenAnswer(invocation -> {
+                    UUID id = invocation.getArgument(1);
+                    String jobId = invocation.getArgument(2);
+                    DocumentType type = invocation.getArgument(4);
+                    return DocumentVersionReference.builder()
+                            .documentId(id)
+                            .documentFamilyId(id)
+                            .jobId(jobId)
+                            .documentType(type)
+                            .version(1)
+                            .contentSha256(
+                                    type == DocumentType.CV
+                                            ? "a".repeat(64)
+                                            : "b".repeat(64))
+                            .ownerId(invocation.getArgument(0))
+                            .sourceType(DocumentSourceType.GENERATED)
                             .build();
                 });
     }
@@ -136,6 +187,132 @@ class PostgresJpaSchemaIntegrationTest {
                 .get()
                 .extracting(ApplicationRecord::getJobTitle)
                 .isEqualTo("Synthetic Java Developer");
+    }
+
+    @Test
+    void accountErasureUsesTheNarrowAppendOnlyOverrideWithinOneTransaction() {
+        String owner = "synthetic-account-erasure-owner";
+        CreateApplicationRequest request = CreateApplicationRequest.builder()
+                .userId(owner)
+                .jobId("synthetic-account-erasure-job")
+                .provenance(ApplicationProvenance.MANUAL)
+                .canonicalJobId("synthetic-account-erasure-job")
+                .provider("TEST")
+                .externalJobId("synthetic-account-erasure-job")
+                .jobTitle("Synthetic role")
+                .companyName("Example Employer")
+                .build();
+        ApplicationCreationResult created = service.createApplication(
+                owner, "synthetic-account-erasure-operation", request);
+        assertThat(eventRepository.countByApplicationIdAndUserId(
+                        created.application().getId(), owner))
+                .isEqualTo(1);
+        assertThatThrownBy(() -> jdbcTemplate.update(
+                        "delete from application_events where user_id = ?", owner))
+                .isInstanceOf(DataAccessException.class);
+
+        accountLifecycleService.erase(owner);
+
+        assertThat(repository.findById(created.application().getId())).isEmpty();
+        assertThat(eventRepository.countByApplicationIdAndUserId(
+                        created.application().getId(), owner))
+                .isZero();
+    }
+
+    @Test
+    void postgresProjectionRetainsMinimalTombstoneAndCannotResurrectPurgedContent() {
+        String ownerId = "synthetic-purged-owner";
+        UUID documentId = UUID.randomUUID();
+        UUID familyId = UUID.randomUUID();
+        ApplicationRecord saved = repository.saveAndFlush(
+                ApplicationRecord.builder()
+                        .userId(ownerId)
+                        .jobId("synthetic-purged-job")
+                        .jobTitle("Synthetic role")
+                        .companyName("Example Employer")
+                        .cvDocumentId(documentId.toString())
+                        .cvDocumentFamilyId(familyId.toString())
+                        .cvDocumentVersion(4)
+                        .cvDocumentContentSha256("a".repeat(64))
+                        .cvDocumentSourceType(DocumentSourceType.UPLOADED)
+                        .cvDocumentOriginalContentSha256("b".repeat(64))
+                        .cvDocumentSelectedAt(LocalDateTime.now().minusDays(2))
+                        .applicationUsedCvDocumentId(documentId.toString())
+                        .applicationUsedCvDocumentFamilyId(familyId.toString())
+                        .applicationUsedCvDocumentVersion(4)
+                        .applicationUsedCvDocumentContentSha256("a".repeat(64))
+                        .applicationUsedCvDocumentSourceType(
+                                DocumentSourceType.UPLOADED)
+                        .applicationUsedCvDocumentOriginalContentSha256(
+                                "b".repeat(64))
+                        .applicationUsedCvDocumentSelectedAt(
+                                LocalDateTime.now().minusDays(2))
+                        .status(ApplicationStatus.APPLIED)
+                        .build());
+
+        availabilityProjectionService.update(
+                ownerId,
+                documentId,
+                new UpdateDocumentAvailabilityRequest(
+                        DocumentAvailabilityState.PURGED,
+                        "PURGED_BY_APPROVED_RETENTION_POLICY",
+                        LocalDateTime.now()));
+
+        ApplicationRecord persisted = repository.findById(saved.getId())
+                .orElseThrow();
+        assertThat(persisted.getCvDocumentContentSha256())
+                .isEqualTo("a".repeat(64));
+        assertThat(persisted.getApplicationUsedCvDocumentContentSha256())
+                .isEqualTo("a".repeat(64));
+        var response = service.getApplicationById(ownerId, saved.getId());
+        assertThat(response.getCvDocumentReference().getDocumentId())
+                .isEqualTo(documentId);
+        assertThat(response.getCvDocumentReference().getDocumentFamilyId())
+                .isEqualTo(familyId);
+        assertThat(response.getCvDocumentReference().getVersion()).isEqualTo(4);
+        assertThat(response.getCvDocumentReference().getOwnerId())
+                .isEqualTo(ownerId);
+        assertThat(response.getCvDocumentReference().getContentSha256())
+                .isEqualTo("a".repeat(64));
+        assertThat(response.getCvDocumentReference().getOriginalContentSha256())
+                .isEqualTo("b".repeat(64));
+        assertThat(response.getCvDocumentReference().getSourceType())
+                .isEqualTo(DocumentSourceType.UPLOADED);
+        assertThat(response.getCvDocumentReference().getSelectedAt()).isNotNull();
+        assertThat(response.getCvDocumentReference().getAvailability())
+                .isEqualTo(DocumentAvailabilityState.PURGED);
+        assertThat(availabilityProjectionRepository
+                        .findByOwnerIdAndDocumentId(ownerId, documentId))
+                .isPresent();
+        var exported = accountLifecycleService.export(ownerId);
+        assertThat(exported.applications()).singleElement().satisfies(application -> {
+            assertThat(application.getCvDocumentReference().getDocumentId())
+                    .isEqualTo(documentId);
+            assertThat(application.getCvDocumentReference().getOwnerId())
+                    .isEqualTo(ownerId);
+            assertThat(application.getCvDocumentReference().getContentSha256())
+                    .isEqualTo("a".repeat(64));
+            assertThat(application
+                            .getCvDocumentReference()
+                            .getOriginalContentSha256())
+                    .isEqualTo("b".repeat(64));
+            assertThat(application.getCvDocumentReference().getSourceType())
+                    .isEqualTo(DocumentSourceType.UPLOADED);
+            assertThat(application.getCvDocumentReference().getSelectedAt())
+                    .isNotNull();
+            assertThat(application.getCvDocumentReference().getAvailability())
+                    .isEqualTo(DocumentAvailabilityState.PURGED);
+        });
+
+        assertThatThrownBy(() -> availabilityProjectionService.update(
+                        ownerId,
+                        documentId,
+                        new UpdateDocumentAvailabilityRequest(
+                                DocumentAvailabilityState.AVAILABLE,
+                                null,
+                                LocalDateTime.now().plusMinutes(1))))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("cannot be restored");
     }
 
     @Test
@@ -184,6 +361,171 @@ class PostgresJpaSchemaIntegrationTest {
         ApplicationRecord committed = repository.findById(saved.getId()).orElseThrow();
         assertThat(committed.getStatus()).isEqualTo(ApplicationStatus.APPLIED);
         assertThat(committed.getVersion()).isEqualTo(1);
+    }
+
+    @Test
+    void staleSelectionWritersHaveOneWinnerAndWinnerRetryHasOneEvent()
+            throws Exception {
+        String ownerId = "synthetic-selection-concurrency-owner";
+        ApplicationRecord saved = repository.saveAndFlush(
+                ApplicationRecord.builder()
+                        .userId(ownerId)
+                        .jobId("synthetic-selection-job")
+                        .canonicalJobId("synthetic-selection-job")
+                        .provider("MANUAL")
+                        .externalJobId("synthetic-selection-job")
+                        .provenance(ApplicationProvenance.MANUAL)
+                        .jobTitle("Synthetic Java Developer")
+                        .companyName("Example Employer")
+                        .status(ApplicationStatus.SAVED)
+                        .build());
+        UUID firstDocument =
+                UUID.fromString("11111111-1111-4111-8111-111111111111");
+        UUID secondDocument =
+                UUID.fromString("33333333-3333-4333-8333-333333333333");
+        SaveDocumentSelectionsRequest firstRequest =
+                selection(firstDocument, 0);
+        SaveDocumentSelectionsRequest secondRequest =
+                selection(secondDocument, 0);
+
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService writers = Executors.newFixedThreadPool(2);
+        try {
+            Future<Object> first = writers.submit(() -> runSelection(
+                    start,
+                    ownerId,
+                    saved.getId(),
+                    "selection-writer-one",
+                    firstRequest));
+            Future<Object> second = writers.submit(() -> runSelection(
+                    start,
+                    ownerId,
+                    saved.getId(),
+                    "selection-writer-two",
+                    secondRequest));
+            start.countDown();
+
+            List<Object> outcomes = List.of(first.get(), second.get());
+            assertThat(outcomes.stream()
+                            .filter(com.jobseekercopilot.applicationtracker.dto.ApplicationRecordResponse.class::isInstance))
+                    .hasSize(1);
+            assertThat(outcomes.stream()
+                            .filter(com.jobseekercopilot.applicationtracker.exception.ApplicationSelectionVersionConflictException.class::isInstance))
+                    .hasSize(1);
+
+            ApplicationRecord persisted =
+                    repository.findById(saved.getId()).orElseThrow();
+            assertThat(persisted.getCvDocumentSourceType())
+                    .isEqualTo(DocumentSourceType.GENERATED);
+            assertThat(persisted.getCvDocumentSelectedAt()).isNotNull();
+            UUID winningDocument = UUID.fromString(persisted.getCvDocumentId());
+            String winningKey = winningDocument.equals(firstDocument)
+                    ? "selection-writer-one"
+                    : "selection-writer-two";
+            SaveDocumentSelectionsRequest winningRequest =
+                    winningDocument.equals(firstDocument)
+                            ? firstRequest
+                            : secondRequest;
+
+            documentSelectionService.save(
+                    ownerId,
+                    saved.getId(),
+                    winningKey,
+                    winningRequest,
+                    ApplicationCommandActor.user(ownerId));
+
+            assertThat(persisted.getVersion()).isEqualTo(1);
+            assertThat(eventRepository.countByApplicationIdAndUserId(
+                            saved.getId(), ownerId))
+                    .isEqualTo(1);
+        } finally {
+            writers.shutdownNow();
+        }
+    }
+
+    @Test
+    void simultaneousExactSelectionRetriesReturnOneStoredOutcome()
+            throws Exception {
+        String ownerId = "synthetic-selection-retry-owner";
+        ApplicationRecord saved = repository.saveAndFlush(
+                ApplicationRecord.builder()
+                        .userId(ownerId)
+                        .jobId("synthetic-selection-retry-job")
+                        .canonicalJobId("synthetic-selection-retry-job")
+                        .provider("MANUAL")
+                        .externalJobId("synthetic-selection-retry-job")
+                        .provenance(ApplicationProvenance.MANUAL)
+                        .jobTitle("Synthetic Java Developer")
+                        .companyName("Example Employer")
+                        .status(ApplicationStatus.SAVED)
+                        .build());
+        SaveDocumentSelectionsRequest request = selection(
+                UUID.fromString("44444444-4444-4444-8444-444444444444"),
+                0);
+
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService retries = Executors.newFixedThreadPool(2);
+        try {
+            Future<Object> first = retries.submit(() -> runSelection(
+                    start,
+                    ownerId,
+                    saved.getId(),
+                    "simultaneous-selection-retry",
+                    request));
+            Future<Object> second = retries.submit(() -> runSelection(
+                    start,
+                    ownerId,
+                    saved.getId(),
+                    "simultaneous-selection-retry",
+                    request));
+            start.countDown();
+
+            List<Object> outcomes = List.of(first.get(), second.get());
+            assertThat(outcomes)
+                    .allMatch(com.jobseekercopilot.applicationtracker.dto.ApplicationRecordResponse.class::isInstance);
+            assertThat(outcomes.get(0)).isEqualTo(outcomes.get(1));
+            assertThat(eventRepository.countByApplicationIdAndUserId(
+                            saved.getId(), ownerId))
+                    .isEqualTo(1);
+            assertThat(repository.findById(saved.getId()).orElseThrow()
+                            .getVersion())
+                    .isEqualTo(1);
+        } finally {
+            retries.shutdownNow();
+        }
+    }
+
+    private Object runSelection(
+            CountDownLatch start,
+            String ownerId,
+            UUID applicationId,
+            String idempotencyKey,
+            SaveDocumentSelectionsRequest request) throws InterruptedException {
+        start.await();
+        try {
+            return documentSelectionService.save(
+                    ownerId,
+                    applicationId,
+                    idempotencyKey,
+                    request,
+                    ApplicationCommandActor.user(ownerId));
+        } catch (RuntimeException failure) {
+            return failure;
+        }
+    }
+
+    private SaveDocumentSelectionsRequest selection(
+            UUID cvDocumentId, long expectedVersion) {
+        return SaveDocumentSelectionsRequest.builder()
+                .cvSelection(DocumentSelectionCommand.builder()
+                        .state(DocumentSelectionState.SELECTED)
+                        .documentId(cvDocumentId)
+                        .build())
+                .coverLetterSelection(DocumentSelectionCommand.builder()
+                        .state(DocumentSelectionState.OMITTED)
+                        .build())
+                .expectedVersion(expectedVersion)
+                .build();
     }
 
     @Test

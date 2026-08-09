@@ -6,13 +6,14 @@ import com.jobseekercopilot.applicationtracker.dto.DocumentVersionReference;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationProvenance;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationRecord;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationStatus;
+import com.jobseekercopilot.applicationtracker.entity.FrozenDocumentSelectionState;
 import com.jobseekercopilot.applicationtracker.exception.InvalidRequestException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.time.LocalDateTime;
 import java.time.Clock;
+import java.time.LocalDateTime;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
@@ -39,6 +40,7 @@ public class ApplicationCreationService {
     private final ApplicationCreationTransaction transaction;
     private final DocumentReferenceVerifier documentReferenceVerifier;
     private final AuthoritativeJobSourcePolicy authoritativeJobSourcePolicy;
+    private final Clock clock;
 
     public ApplicationCreationOutcome createApplication(
             String ownerId,
@@ -170,10 +172,11 @@ public class ApplicationCreationService {
         boolean allowed = provenance == ApplicationProvenance.GENERATED
                 ? status == ApplicationStatus.DOCUMENTS_GENERATED
                         || status == ApplicationStatus.APPLIED
-                : status == ApplicationStatus.APPLIED;
+                : status == ApplicationStatus.SAVED
+                        || status == ApplicationStatus.APPLIED;
         if (!allowed) {
             throw new InvalidRequestException(
-                    "GENERATED applications may start as DOCUMENTS_GENERATED or APPLIED; MANUAL and EXTERNAL applications must start as APPLIED.");
+                    "GENERATED applications may start as DOCUMENTS_GENERATED or APPLIED; MANUAL and EXTERNAL applications may start as SAVED or APPLIED.");
         }
     }
 
@@ -230,11 +233,12 @@ public class ApplicationCreationService {
                 .location(command.location())
                 .status(command.status())
                 .build();
-        setCurrentCvReference(record, cvReference);
-        setCurrentCoverLetterReference(record, coverLetterReference);
+        LocalDateTime selectedAt = LocalDateTime.now(clock);
+        setCurrentCvReference(record, cvReference, selectedAt);
+        setCurrentCoverLetterReference(record, coverLetterReference, selectedAt);
 
         if (command.status() == ApplicationStatus.APPLIED) {
-            LocalDateTime appliedAt = LocalDateTime.now(Clock.systemUTC());
+            LocalDateTime appliedAt = selectedAt;
             record.setAppliedAt(appliedAt);
             freezePresentReferences(record, cvReference, coverLetterReference, appliedAt);
         }
@@ -242,7 +246,9 @@ public class ApplicationCreationService {
     }
 
     private void setCurrentCvReference(
-            ApplicationRecord record, DocumentVersionReference reference) {
+            ApplicationRecord record,
+            DocumentVersionReference reference,
+            LocalDateTime selectedAt) {
         if (reference == null) {
             return;
         }
@@ -250,10 +256,19 @@ public class ApplicationCreationService {
         record.setCvDocumentFamilyId(reference.getDocumentFamilyId().toString());
         record.setCvDocumentVersion(reference.getVersion());
         record.setCvDocumentContentSha256(reference.getContentSha256());
+        record.setCvDocumentSourceType(reference.getSourceType());
+        record.setCvDocumentOriginalContentSha256(
+                reference.getOriginalContentSha256());
+        record.setCvDocumentSelectedAt(selectedAt);
+        record.setCvDocumentEvidenceProvenance(
+                reference.getEvidenceProvenance());
+        record.setCvDocumentGroundingState(reference.getGroundingState());
     }
 
     private void setCurrentCoverLetterReference(
-            ApplicationRecord record, DocumentVersionReference reference) {
+            ApplicationRecord record,
+            DocumentVersionReference reference,
+            LocalDateTime selectedAt) {
         if (reference == null) {
             return;
         }
@@ -262,6 +277,14 @@ public class ApplicationCreationService {
                 reference.getDocumentFamilyId().toString());
         record.setCoverLetterDocumentVersion(reference.getVersion());
         record.setCoverLetterDocumentContentSha256(reference.getContentSha256());
+        record.setCoverLetterDocumentSourceType(reference.getSourceType());
+        record.setCoverLetterDocumentOriginalContentSha256(
+                reference.getOriginalContentSha256());
+        record.setCoverLetterDocumentSelectedAt(selectedAt);
+        record.setCoverLetterDocumentEvidenceProvenance(
+                reference.getEvidenceProvenance());
+        record.setCoverLetterDocumentGroundingState(
+                reference.getGroundingState());
     }
 
     private void freezePresentReferences(
@@ -269,6 +292,12 @@ public class ApplicationCreationService {
             DocumentVersionReference cvReference,
             DocumentVersionReference coverLetterReference,
             LocalDateTime appliedAt) {
+        record.setApplicationUsedCvState(cvReference == null
+                ? FrozenDocumentSelectionState.OMITTED
+                : FrozenDocumentSelectionState.SELECTED);
+        record.setApplicationUsedCoverLetterState(coverLetterReference == null
+                ? FrozenDocumentSelectionState.OMITTED
+                : FrozenDocumentSelectionState.SELECTED);
         if (cvReference != null) {
             record.setApplicationUsedCvDocumentId(
                     cvReference.getDocumentId().toString());
@@ -277,6 +306,16 @@ public class ApplicationCreationService {
             record.setApplicationUsedCvDocumentVersion(cvReference.getVersion());
             record.setApplicationUsedCvDocumentContentSha256(
                     cvReference.getContentSha256());
+            record.setApplicationUsedCvDocumentSourceType(
+                    cvReference.getSourceType());
+            record.setApplicationUsedCvDocumentOriginalContentSha256(
+                    cvReference.getOriginalContentSha256());
+            record.setApplicationUsedCvDocumentSelectedAt(
+                    record.getCvDocumentSelectedAt());
+            record.setApplicationUsedCvEvidenceProvenance(
+                    cvReference.getEvidenceProvenance());
+            record.setApplicationUsedCvGroundingState(
+                    cvReference.getGroundingState());
         }
         if (coverLetterReference != null) {
             record.setApplicationUsedCoverLetterDocumentId(
@@ -287,10 +326,18 @@ public class ApplicationCreationService {
                     coverLetterReference.getVersion());
             record.setApplicationUsedCoverLetterDocumentContentSha256(
                     coverLetterReference.getContentSha256());
+            record.setApplicationUsedCoverLetterDocumentSourceType(
+                    coverLetterReference.getSourceType());
+            record.setApplicationUsedCoverLetterDocumentOriginalContentSha256(
+                    coverLetterReference.getOriginalContentSha256());
+            record.setApplicationUsedCoverLetterDocumentSelectedAt(
+                    record.getCoverLetterDocumentSelectedAt());
+            record.setApplicationUsedCoverLetterEvidenceProvenance(
+                    coverLetterReference.getEvidenceProvenance());
+            record.setApplicationUsedCoverLetterGroundingState(
+                    coverLetterReference.getGroundingState());
         }
-        if (cvReference != null || coverLetterReference != null) {
-            record.setApplicationUsedAt(appliedAt);
-        }
+        record.setApplicationUsedAt(appliedAt);
     }
 
     private String normalizeId(String value, String field) {

@@ -4,9 +4,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jobseekercopilot.applicationtracker.TestJwksServer;
 import com.jobseekercopilot.applicationtracker.dto.CreateApplicationRequest;
 import com.jobseekercopilot.applicationtracker.dto.DocumentType;
+import com.jobseekercopilot.applicationtracker.dto.DocumentEvidenceProvenance;
+import com.jobseekercopilot.applicationtracker.dto.DocumentGroundingState;
 import com.jobseekercopilot.applicationtracker.dto.DocumentVersionReference;
+import com.jobseekercopilot.applicationtracker.dto.EvidenceRevisionReference;
+import com.jobseekercopilot.applicationtracker.dto.EvidenceSection;
+import com.jobseekercopilot.applicationtracker.dto.ValidatedClaimLedger;
 import com.jobseekercopilot.applicationtracker.dto.UpdateStatusRequest;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationDocumentReconciliation;
+import com.jobseekercopilot.applicationtracker.entity.ApplicationEventType;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationRecord;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationProvenance;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationStatus;
@@ -15,8 +21,10 @@ import com.jobseekercopilot.applicationtracker.exception.DocumentReferenceUnavai
 import com.jobseekercopilot.applicationtracker.exception.InvalidDocumentReferenceException;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationRecordRepository;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationEventRepository;
+import com.jobseekercopilot.applicationtracker.repository.ApplicationDocumentSelectionCommandRepository;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationDocumentWorkflowRepository;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationDocumentReconciliationRepository;
+import com.jobseekercopilot.applicationtracker.repository.DocumentAvailabilityProjectionRepository;
 import com.jobseekercopilot.applicationtracker.security.ApplicationOwnerResolver;
 import com.jobseekercopilot.applicationtracker.security.ApplicationServiceIdentityFilter;
 import com.jobseekercopilot.applicationtracker.service.DocumentStoreWorkflowClient;
@@ -37,7 +45,9 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -46,6 +56,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.mockito.ArgumentMatchers.any;
@@ -94,11 +105,18 @@ class ApplicationRecordControllerIntegrationTest {
     private ApplicationEventRepository eventRepository;
 
     @Autowired
+    private ApplicationDocumentSelectionCommandRepository selectionCommandRepository;
+
+    @Autowired
     private ApplicationDocumentWorkflowRepository workflowRepository;
 
     @Autowired
     private ApplicationDocumentReconciliationRepository
             reconciliationRepository;
+
+    @Autowired
+    private DocumentAvailabilityProjectionRepository
+            availabilityProjectionRepository;
 
     @Autowired
     private ApplicationReplacementWorkflowService replacementWorkflowService;
@@ -113,6 +131,8 @@ class ApplicationRecordControllerIntegrationTest {
     void setUp() {
         workflowRepository.deleteAll();
         reconciliationRepository.deleteAll();
+        selectionCommandRepository.deleteAll();
+        availabilityProjectionRepository.deleteAll();
         repository.deleteAll();
         when(documentReferenceVerifier.verify(
                         anyString(),
@@ -123,6 +143,314 @@ class ApplicationRecordControllerIntegrationTest {
                         invocation.getArgument(1),
                         invocation.getArgument(2),
                         invocation.getArgument(3)));
+        when(documentReferenceVerifier.verify(
+                        anyString(),
+                        any(UUID.class),
+                        anyString(),
+                        any(UUID.class),
+                        any(DocumentType.class)))
+                .thenAnswer(invocation -> reference(
+                        invocation.getArgument(1),
+                        invocation.getArgument(2),
+                        invocation.getArgument(4)));
+    }
+
+    @Test
+    void atomicDocumentSelectionSupportsEveryOptionalCombination()
+            throws Exception {
+        ApplicationRecord application = savedApplication("selection-owner");
+
+        String cvOnly = saveSelections(
+                application,
+                "selection-owner",
+                "selection-cv-only",
+                application.getVersion(),
+                selected(CV_ID),
+                omitted());
+        long version = objectMapper.readTree(cvOnly).get("version").asLong();
+        assertThat(objectMapper.readTree(cvOnly).get("cvDocumentId").asText())
+                .isEqualTo(CV_ID.toString());
+        assertThat(objectMapper.readTree(cvOnly).get("coverLetterDocumentId").isNull())
+                .isTrue();
+
+        String coverOnly = saveSelections(
+                application,
+                "selection-owner",
+                "selection-cover-only",
+                version,
+                omitted(),
+                selected(COVER_LETTER_ID));
+        version = objectMapper.readTree(coverOnly).get("version").asLong();
+        assertThat(objectMapper.readTree(coverOnly).get("cvDocumentId").isNull())
+                .isTrue();
+        assertThat(objectMapper.readTree(coverOnly)
+                        .get("coverLetterDocumentId").asText())
+                .isEqualTo(COVER_LETTER_ID.toString());
+
+        String both = saveSelections(
+                application,
+                "selection-owner",
+                "selection-both",
+                version,
+                selected(CV_ID),
+                selected(COVER_LETTER_ID));
+        version = objectMapper.readTree(both).get("version").asLong();
+        assertThat(objectMapper.readTree(both).get("cvDocumentId").asText())
+                .isEqualTo(CV_ID.toString());
+        assertThat(objectMapper.readTree(both)
+                        .get("coverLetterDocumentId").asText())
+                .isEqualTo(COVER_LETTER_ID.toString());
+
+        String none = saveSelections(
+                application,
+                "selection-owner",
+                "selection-none",
+                version,
+                omitted(),
+                omitted());
+        assertThat(objectMapper.readTree(none).get("cvDocumentId").isNull())
+                .isTrue();
+        assertThat(objectMapper.readTree(none)
+                        .get("coverLetterDocumentId").isNull())
+                .isTrue();
+        assertThat(repository.findById(application.getId()).orElseThrow()
+                        .getStatus())
+                .isEqualTo(ApplicationStatus.SAVED);
+        assertThat(eventRepository.findByUserIdOrderByOccurredAtAscRecordedAtAscIdAsc(
+                                "selection-owner")
+                        .stream()
+                        .map(event -> event.getEventType()))
+                .containsExactly(
+                        ApplicationEventType.APPLICATION_DOCUMENT_SELECTED,
+                        ApplicationEventType.APPLICATION_DOCUMENT_SELECTION_CHANGED,
+                        ApplicationEventType.APPLICATION_DOCUMENT_SELECTION_CHANGED,
+                        ApplicationEventType.APPLICATION_DOCUMENT_SELECTION_CHANGED);
+    }
+
+    @Test
+    void firstExplicitOmissionIsRecordedOnceAndLaterNoOpIsSilent()
+            throws Exception {
+        ApplicationRecord application = savedApplication("omission-owner");
+
+        saveSelections(
+                application,
+                "omission-owner",
+                "initial-omission",
+                0,
+                omitted(),
+                omitted());
+        saveSelections(
+                application,
+                "omission-owner",
+                "same-omission-new-command",
+                0,
+                omitted(),
+                omitted());
+
+        var events = eventRepository
+                .findByUserIdOrderByOccurredAtAscRecordedAtAscIdAsc(
+                        "omission-owner");
+        assertThat(events).hasSize(1);
+        assertThat(events.get(0).getEventType())
+                .isEqualTo(ApplicationEventType.APPLICATION_DOCUMENT_SELECTED);
+        assertThat(events.get(0).getReason())
+                .isEqualTo("Atomic application document selections saved: CV remains omitted; cover letter remains omitted.");
+    }
+
+    @Test
+    void atomicSelectionContractRejectsPartialOrInconsistentSlots()
+            throws Exception {
+        ApplicationRecord application = savedApplication("validation-owner");
+        String path = "/api/v1/applications/" + application.getId()
+                + "/document-selections";
+
+        mockMvc.perform(put(path)
+                        .header(HttpHeaders.AUTHORIZATION, authorization("validation-owner"))
+                        .header("Idempotency-Key", "missing-cover-slot")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"cvSelection":{"state":"OMITTED"},"expectedVersion":0}
+                                """))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(put(path)
+                        .header(HttpHeaders.AUTHORIZATION, authorization("validation-owner"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(selectionJson(0, omitted(), omitted())))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(put(path)
+                        .header(HttpHeaders.AUTHORIZATION, authorization("validation-owner"))
+                        .header("Idempotency-Key", "selected-without-id")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"cvSelection":{"state":"SELECTED"},"coverLetterSelection":{"state":"OMITTED"},"expectedVersion":0}
+                                """))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(put(path)
+                        .header(HttpHeaders.AUTHORIZATION, authorization("validation-owner"))
+                        .header("Idempotency-Key", "omitted-with-id")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"cvSelection":{"state":"OMITTED","documentId":"11111111-1111-4111-8111-111111111111"},"coverLetterSelection":{"state":"OMITTED"},"expectedVersion":0}
+                                """))
+                .andExpect(status().isBadRequest());
+
+        assertThat(repository.findById(application.getId()).orElseThrow()
+                        .getVersion())
+                .isZero();
+    }
+
+    @Test
+    void appliedApplicationRejectsSelectionWithoutDocumentVerification()
+            throws Exception {
+        ApplicationRecord application = savedApplication("applied-selection-owner");
+        application.setStatus(ApplicationStatus.APPLIED);
+        application.setAppliedAt(LocalDateTime.now());
+        repository.saveAndFlush(application);
+
+        mockMvc.perform(put(
+                                "/api/v1/applications/{id}/document-selections",
+                                application.getId())
+                        .header(
+                                HttpHeaders.AUTHORIZATION,
+                                authorization("applied-selection-owner"))
+                        .header("Idempotency-Key", "applied-selection")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(selectionJson(
+                                application.getVersion(),
+                                selected(CV_ID),
+                                omitted())))
+                .andExpect(status().isBadRequest());
+
+        verify(documentReferenceVerifier, org.mockito.Mockito.never()).verify(
+                anyString(), any(UUID.class), anyString(), any(DocumentType.class));
+        assertThat(repository.findById(application.getId()).orElseThrow()
+                        .getCvDocumentId())
+                .isNull();
+    }
+
+    @Test
+    void staleSelectionReturnsAuthoritativeStateWithoutPartialMutation()
+            throws Exception {
+        ApplicationRecord application = savedApplication("stale-owner");
+        saveSelections(
+                application,
+                "stale-owner",
+                "stale-first",
+                0,
+                selected(CV_ID),
+                omitted());
+
+        mockMvc.perform(put(
+                                "/api/v1/applications/{id}/document-selections",
+                                application.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authorization("stale-owner"))
+                        .header("Idempotency-Key", "stale-second")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(selectionJson(
+                                0,
+                                omitted(),
+                                selected(COVER_LETTER_ID))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.currentApplication.version").value(1))
+                .andExpect(jsonPath("$.currentApplication.cvDocumentId")
+                        .value(CV_ID.toString()))
+                .andExpect(jsonPath("$.currentApplication.coverLetterDocumentId")
+                        .doesNotExist());
+
+        ApplicationRecord persisted =
+                repository.findById(application.getId()).orElseThrow();
+        assertThat(persisted.getCvDocumentId()).isEqualTo(CV_ID.toString());
+        assertThat(persisted.getCoverLetterDocumentId()).isNull();
+    }
+
+    @Test
+    void selectionReplayReturnsStoredOutcomeOnceAndKeyReuseConflicts()
+            throws Exception {
+        ApplicationRecord application = savedApplication("retry-owner");
+        String first = saveSelections(
+                application,
+                "retry-owner",
+                "retry-selection",
+                0,
+                selected(CV_ID),
+                omitted());
+        String replay = saveSelections(
+                application,
+                "retry-owner",
+                "retry-selection",
+                0,
+                selected(CV_ID),
+                omitted());
+
+        assertThat(objectMapper.readTree(replay))
+                .isEqualTo(objectMapper.readTree(first));
+        assertThat(eventRepository.countByApplicationIdAndUserId(
+                        application.getId(), "retry-owner"))
+                .isEqualTo(1);
+        var recorded = eventRepository
+                .findByUserIdOrderByOccurredAtAscRecordedAtAscIdAsc("retry-owner")
+                .get(0);
+        assertThat(recorded.getEventType())
+                .isEqualTo(ApplicationEventType.APPLICATION_DOCUMENT_SELECTED);
+        assertThat(recorded.getReason())
+                .doesNotContain(CV_ID.toString())
+                .doesNotContain("hash")
+                .doesNotContain("file")
+                .doesNotContain("content");
+
+        mockMvc.perform(put(
+                                "/api/v1/applications/{id}/document-selections",
+                                application.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authorization("retry-owner"))
+                        .header("Idempotency-Key", "retry-selection")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(selectionJson(0, omitted(), omitted())))
+                .andExpect(status().isConflict());
+        assertThat(eventRepository.countByApplicationIdAndUserId(
+                        application.getId(), "retry-owner"))
+                .isEqualTo(1);
+    }
+
+    @Test
+    void invalidOrCrossOwnerSelectionNeverMutatesApplication()
+            throws Exception {
+        ApplicationRecord application = savedApplication("secure-owner");
+        UUID rejectedDocument =
+                UUID.fromString("77777777-7777-4777-8777-777777777777");
+        when(documentReferenceVerifier.verify(
+                        "secure-owner",
+                        rejectedDocument,
+                        "selection-job",
+                        application.getId(),
+                        DocumentType.CV))
+                .thenThrow(new InvalidDocumentReferenceException());
+
+        mockMvc.perform(put(
+                                "/api/v1/applications/{id}/document-selections",
+                                application.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authorization("secure-owner"))
+                        .header("Idempotency-Key", "invalid-selection")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(selectionJson(
+                                0, selected(rejectedDocument), omitted())))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(put(
+                                "/api/v1/applications/{id}/document-selections",
+                                application.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authorization("other-owner"))
+                        .header("Idempotency-Key", "cross-owner-selection")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(selectionJson(0, selected(CV_ID), omitted())))
+                .andExpect(status().isNotFound());
+
+        ApplicationRecord persisted =
+                repository.findById(application.getId()).orElseThrow();
+        assertThat(persisted.getCvDocumentId()).isNull();
+        assertThat(persisted.getCoverLetterDocumentId()).isNull();
     }
 
     @Test
@@ -146,6 +474,12 @@ class ApplicationRecordControllerIntegrationTest {
                 .andExpect(jsonPath("$.jobTitle").value("Java Developer"))
                 .andExpect(jsonPath("$.companyName").value("Example Ltd"))
                 .andExpect(jsonPath("$.status").value("DOCUMENTS_GENERATED"))
+                .andExpect(jsonPath(
+                                "$.cvDocumentReference.evidenceProvenance.profileRevisionId")
+                        .value("33333333-3333-4333-8333-333333333333"))
+                .andExpect(jsonPath(
+                                "$.coverLetterDocumentReference.evidenceProvenance.evidenceSnapshotId")
+                        .value("44444444-4444-4444-8444-444444444444"))
                 .andExpect(jsonPath("$.id").isNotEmpty());
     }
 
@@ -317,6 +651,66 @@ class ApplicationRecordControllerIntegrationTest {
     }
 
     @Test
+    void savedApplicationCreationEmitsOneContentFreeSavedEventOnReplay()
+            throws Exception {
+        String ownerId = "saved-owner";
+        CreateApplicationRequest request = CreateApplicationRequest.builder()
+                .userId(ownerId)
+                .jobId("saved-job-1")
+                .canonicalJobId("saved-job-1")
+                .provider("manual")
+                .externalJobId("saved-job-1")
+                .jobTitle("Support Engineer")
+                .companyName("Example Ltd")
+                .location("London")
+                .provenance(ApplicationProvenance.MANUAL)
+                .initialStatus(ApplicationStatus.SAVED)
+                .build();
+
+        String firstBody = mockMvc.perform(post("/api/v1/applications")
+                        .header(HttpHeaders.AUTHORIZATION, authorization(ownerId))
+                        .header(
+                                ApplicationRecordController.IDEMPOTENCY_KEY_HEADER,
+                                "saved-job-1-attempt")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("SAVED"))
+                .andExpect(jsonPath("$.appliedAt").doesNotExist())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String applicationId = objectMapper.readTree(firstBody).get("id").asText();
+
+        mockMvc.perform(post("/api/v1/applications")
+                        .header(HttpHeaders.AUTHORIZATION, authorization(ownerId))
+                        .header(
+                                ApplicationRecordController.IDEMPOTENCY_KEY_HEADER,
+                                "saved-job-1-attempt")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(applicationId));
+
+        mockMvc.perform(get(
+                                "/api/v1/applications/{id}/history",
+                                applicationId)
+                        .header(HttpHeaders.AUTHORIZATION, authorization(ownerId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.events", hasSize(1)))
+                .andExpect(jsonPath("$.events[0].eventType")
+                        .value("APPLICATION_SAVED"))
+                .andExpect(jsonPath("$.events[0].fromStatus").doesNotExist())
+                .andExpect(jsonPath("$.events[0].toStatus").value("SAVED"))
+                .andExpect(jsonPath("$.events[0].reason")
+                        .value("Application created with MANUAL provenance."));
+
+        assertThat(eventRepository.countByApplicationIdAndUserId(
+                        UUID.fromString(applicationId), ownerId))
+                .isEqualTo(1);
+    }
+
+    @Test
     void lifecycleCommandsExposeOrderedPaginatedOwnerScopedHistory()
             throws Exception {
         String ownerId = "history-owner";
@@ -369,7 +763,7 @@ class ApplicationRecordControllerIntegrationTest {
                                 applicationId)
                         .header(HttpHeaders.AUTHORIZATION, authorization(ownerId))
                         .queryParam("page", "0")
-                        .queryParam("size", "2"))
+                        .queryParam("size", "3"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.applicationId")
                         .value(applicationId.toString()))
@@ -377,23 +771,25 @@ class ApplicationRecordControllerIntegrationTest {
                 .andExpect(jsonPath("$.currentVersion").value(3))
                 .andExpect(jsonPath("$.reconciled").value(true))
                 .andExpect(jsonPath("$.page").value(0))
-                .andExpect(jsonPath("$.size").value(2))
-                .andExpect(jsonPath("$.totalElements").value(4))
+                .andExpect(jsonPath("$.size").value(3))
+                .andExpect(jsonPath("$.totalElements").value(5))
                 .andExpect(jsonPath("$.totalPages").value(2))
-                .andExpect(jsonPath("$.events", hasSize(2)))
+                .andExpect(jsonPath("$.events", hasSize(3)))
                 .andExpect(jsonPath("$.events[0].eventType")
                         .value("APPLICATION_CREATED"))
                 .andExpect(jsonPath("$.events[0].actorType").value("USER"))
                 .andExpect(jsonPath("$.events[0].actorId").value(ownerId))
                 .andExpect(jsonPath("$.events[0].source").value("USER"))
                 .andExpect(jsonPath("$.events[1].eventType")
+                        .value("APPLICATION_DOCUMENTS_FROZEN"))
+                .andExpect(jsonPath("$.events[2].eventType")
                         .value("STATUS_CHANGED"))
-                .andExpect(jsonPath("$.events[1].fromStatus")
+                .andExpect(jsonPath("$.events[2].fromStatus")
                         .value("DOCUMENTS_GENERATED"))
-                .andExpect(jsonPath("$.events[1].toStatus").value("APPLIED"))
-                .andExpect(jsonPath("$.events[1].occurredAt")
+                .andExpect(jsonPath("$.events[2].toStatus").value("APPLIED"))
+                .andExpect(jsonPath("$.events[2].occurredAt")
                         .value(appliedAt.toString()))
-                .andExpect(jsonPath("$.events[1].reason").value("Applied"));
+                .andExpect(jsonPath("$.events[2].reason").value("Applied"));
 
         mockMvc.perform(get(
                                 "/api/v1/applications/{id}/history",
@@ -615,6 +1011,95 @@ class ApplicationRecordControllerIntegrationTest {
     }
 
     @Test
+    void purgedAvailabilityKeepsMinimalTombstoneAndCannotRestoreContent()
+            throws Exception {
+        LocalDateTime frozenAt = LocalDateTime.now().minusDays(3);
+        ApplicationRecord saved = repository.saveAndFlush(
+                ApplicationRecord.builder()
+                        .userId("availability-owner")
+                        .jobId("job-availability")
+                        .jobTitle("Java Developer")
+                        .companyName("Example Ltd")
+                        .cvDocumentId(CV_ID.toString())
+                        .cvDocumentFamilyId(CV_ID.toString())
+                        .cvDocumentVersion(7)
+                        .cvDocumentContentSha256("a".repeat(64))
+                        .cvDocumentEvidenceProvenance(provenance())
+                        .cvDocumentGroundingState(
+                                DocumentGroundingState
+                                        .AI_GENERATED_EVIDENCE_VALIDATED)
+                        .applicationUsedCvDocumentId(CV_ID.toString())
+                        .applicationUsedCvDocumentFamilyId(CV_ID.toString())
+                        .applicationUsedCvDocumentVersion(7)
+                        .applicationUsedCvDocumentContentSha256("a".repeat(64))
+                        .applicationUsedCvEvidenceProvenance(provenance())
+                        .applicationUsedCvGroundingState(
+                                DocumentGroundingState
+                                        .AI_GENERATED_EVIDENCE_VALIDATED)
+                        .applicationUsedCvState(
+                                com.jobseekercopilot.applicationtracker.entity
+                                        .FrozenDocumentSelectionState.SELECTED)
+                        .applicationUsedAt(frozenAt)
+                        .status(ApplicationStatus.APPLIED)
+                        .build());
+        String occurredAt = LocalDateTime.now().minusMinutes(1).toString();
+
+        mockMvc.perform(put(
+                                "/api/v1/applications/document/{documentId}/availability",
+                                CV_ID)
+                        .headers(producerHeaders("availability-owner"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"availability":"PURGED","unavailableReason":"PURGED_BY_APPROVED_RETENTION_POLICY","occurredAt":"%s"}
+                                """.formatted(occurredAt)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.availability").value("PURGED"))
+                .andExpect(jsonPath("$.unavailableReason").value(
+                        "PURGED_BY_APPROVED_RETENTION_POLICY"));
+
+        mockMvc.perform(get("/api/v1/applications/{id}", saved.getId())
+                        .header(HttpHeaders.AUTHORIZATION,
+                                authorization("availability-owner")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.cvDocumentReference.documentId")
+                        .value(CV_ID.toString()))
+                .andExpect(jsonPath("$.cvDocumentReference.version").value(7))
+                .andExpect(jsonPath("$.cvDocumentReference.availability")
+                        .value("PURGED"))
+                .andExpect(jsonPath("$.cvDocumentReference.unavailableReason")
+                        .value("PURGED_BY_APPROVED_RETENTION_POLICY"))
+                .andExpect(jsonPath("$.cvDocumentReference.contentSha256")
+                        .value("a".repeat(64)))
+                .andExpect(jsonPath("$.cvDocumentReference.evidenceProvenance")
+                        .doesNotExist())
+                .andExpect(jsonPath(
+                                "$.applicationUsedCvDocumentReference.documentId")
+                        .value(CV_ID.toString()))
+                .andExpect(jsonPath(
+                                "$.applicationUsedCvDocumentReference.contentSha256")
+                        .value("a".repeat(64)));
+
+        ApplicationRecord scrubbed = repository.findById(saved.getId())
+                .orElseThrow();
+        assertThat(scrubbed.getCvDocumentContentSha256())
+                .isEqualTo("a".repeat(64));
+        assertThat(scrubbed.getCvDocumentEvidenceProvenance()).isNull();
+        assertThat(scrubbed.getApplicationUsedCvDocumentContentSha256())
+                .isEqualTo("a".repeat(64));
+        assertThat(scrubbed.getApplicationUsedCvEvidenceProvenance()).isNull();
+
+        mockMvc.perform(put(
+                                "/api/v1/applications/document/{documentId}/availability",
+                                CV_ID)
+                        .headers(producerHeaders("availability-owner"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"availability":"AVAILABLE","occurredAt":"%s"}
+                                """.formatted(LocalDateTime.now())))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void getApplicationById_WhenNotExists_ShouldReturn404() throws Exception {
         mockMvc.perform(get("/api/v1/applications/{id}", UUID.randomUUID())
                         .header(HttpHeaders.AUTHORIZATION, authorization("user-123")))
@@ -669,6 +1154,62 @@ class ApplicationRecordControllerIntegrationTest {
     }
 
     @Test
+    void exactDocumentAssociationsDistinguishDraftAndFrozenWithoutCrossOwnerLeak()
+            throws Exception {
+        UUID frozenApplicationId = repository.saveAndFlush(
+                ApplicationRecord.builder()
+                        .userId("association-owner")
+                        .jobId("job-frozen")
+                        .jobTitle("Frozen role")
+                        .companyName("Example Ltd")
+                        .applicationUsedCvDocumentId(CV_ID.toString())
+                        .applicationUsedCvDocumentFamilyId(CV_ID.toString())
+                        .applicationUsedCvDocumentVersion(2)
+                        .applicationUsedCvDocumentContentSha256("a".repeat(64))
+                        .applicationUsedCvState(
+                                com.jobseekercopilot.applicationtracker.entity
+                                        .FrozenDocumentSelectionState.SELECTED)
+                        .applicationUsedAt(LocalDateTime.now().minusDays(2))
+                        .status(ApplicationStatus.APPLIED)
+                        .build())
+                .getId();
+        UUID draftApplicationId = repository.saveAndFlush(
+                ApplicationRecord.builder()
+                        .userId("association-owner")
+                        .jobId("job-draft")
+                        .jobTitle("Draft role")
+                        .companyName("Example Ltd")
+                        .cvDocumentId(CV_ID.toString())
+                        .cvDocumentFamilyId(CV_ID.toString())
+                        .cvDocumentVersion(2)
+                        .cvDocumentContentSha256("a".repeat(64))
+                        .status(ApplicationStatus.SAVED)
+                        .build())
+                .getId();
+
+        mockMvc.perform(get(
+                                "/api/v1/applications/document/{documentId}/associations",
+                                CV_ID)
+                        .headers(producerHeaders("association-owner")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.associationCount").value(2))
+                .andExpect(jsonPath("$.associations[?(@.applicationId == '%s')].associationState"
+                                .formatted(frozenApplicationId))
+                        .value(org.hamcrest.Matchers.contains("FROZEN_USED")))
+                .andExpect(jsonPath("$.associations[?(@.applicationId == '%s')].associationState"
+                                .formatted(draftApplicationId))
+                        .value(org.hamcrest.Matchers.contains("DRAFT_SELECTED")));
+
+        mockMvc.perform(get(
+                                "/api/v1/applications/document/{documentId}/associations",
+                                CV_ID)
+                        .headers(producerHeaders("different-owner")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.associationCount").value(0))
+                .andExpect(jsonPath("$.associations").isEmpty());
+    }
+
+    @Test
     void updateStatus_WithValidStatus_ShouldReturn200() throws Exception {
         ApplicationRecord saved = repository.save(ApplicationRecord.builder()
                 .userId("user-123")
@@ -694,6 +1235,9 @@ class ApplicationRecordControllerIntegrationTest {
 
         mockMvc.perform(patch("/api/v1/applications/{id}/status", saved.getId())
                         .header(HttpHeaders.AUTHORIZATION, authorization("user-123"))
+                        .header(
+                                ApplicationRecordController.IDEMPOTENCY_KEY_HEADER,
+                                "apply-valid-status")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -705,8 +1249,27 @@ class ApplicationRecordControllerIntegrationTest {
                         .value(CV_ID.toString()))
                 .andExpect(jsonPath("$.applicationUsedCoverLetterDocumentReference.documentId")
                         .value(COVER_LETTER_ID.toString()))
+                .andExpect(jsonPath("$.applicationUsedCvState").value("SELECTED"))
+                .andExpect(jsonPath("$.applicationUsedCoverLetterState")
+                        .value("SELECTED"))
                 .andExpect(jsonPath("$.appliedAt").isNotEmpty())
                 .andExpect(jsonPath("$.version").value(1));
+
+        long eventsAfterApply = eventRepository.countByApplicationIdAndUserId(
+                saved.getId(), "user-123");
+        mockMvc.perform(patch("/api/v1/applications/{id}/status", saved.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authorization("user-123"))
+                        .header(
+                                ApplicationRecordController.IDEMPOTENCY_KEY_HEADER,
+                                "apply-valid-status")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("APPLIED"))
+                .andExpect(jsonPath("$.version").value(1));
+        assertThat(eventRepository.countByApplicationIdAndUserId(
+                        saved.getId(), "user-123"))
+                .isEqualTo(eventsAfterApply);
     }
 
     @Test
@@ -741,6 +1304,9 @@ class ApplicationRecordControllerIntegrationTest {
                         .header(
                                 HttpHeaders.AUTHORIZATION,
                                 authorization("unhealthy-owner"))
+                        .header(
+                                ApplicationRecordController.IDEMPOTENCY_KEY_HEADER,
+                                "apply-unhealthy-status")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
                                 UpdateStatusRequest.builder()
@@ -826,7 +1392,7 @@ class ApplicationRecordControllerIntegrationTest {
     }
 
     @Test
-    void updateStatus_RepeatedStatus_ShouldBeIdempotentEvenWithStaleVersion()
+    void updateStatus_NewCommandCannotRewriteAlreadyAppliedRecord()
             throws Exception {
         ApplicationRecord saved = repository.saveAndFlush(ApplicationRecord.builder()
                 .userId("retry-owner")
@@ -843,14 +1409,15 @@ class ApplicationRecordControllerIntegrationTest {
 
         mockMvc.perform(patch("/api/v1/applications/{id}/status", saved.getId())
                         .header(HttpHeaders.AUTHORIZATION, authorization("retry-owner"))
+                        .header(
+                                ApplicationRecordController.IDEMPOTENCY_KEY_HEADER,
+                                "different-apply-command")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(UpdateStatusRequest.builder()
                                 .status("APPLIED")
                                 .expectedVersion(99L)
                                 .build())))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("APPLIED"))
-                .andExpect(jsonPath("$.version").value(0));
+                .andExpect(status().isConflict());
 
         ApplicationRecord unchanged = repository.findById(saved.getId()).orElseThrow();
         assertThat(unchanged.getVersion()).isZero();
@@ -1231,6 +1798,63 @@ class ApplicationRecordControllerIntegrationTest {
                 .andExpect(jsonPath("$.status").value("APPLIED"));
     }
 
+    private ApplicationRecord savedApplication(String ownerId) {
+        return repository.saveAndFlush(ApplicationRecord.builder()
+                .userId(ownerId)
+                .jobId("selection-job")
+                .canonicalJobId("selection-job")
+                .provider("MANUAL")
+                .externalJobId("selection-job")
+                .provenance(ApplicationProvenance.MANUAL)
+                .jobTitle("Java Developer")
+                .companyName("Example Ltd")
+                .status(ApplicationStatus.SAVED)
+                .build());
+    }
+
+    private String saveSelections(
+            ApplicationRecord application,
+            String ownerId,
+            String idempotencyKey,
+            long expectedVersion,
+            String cvSelection,
+            String coverLetterSelection) throws Exception {
+        return mockMvc.perform(put(
+                                "/api/v1/applications/{id}/document-selections",
+                                application.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authorization(ownerId))
+                        .header("Idempotency-Key", idempotencyKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(selectionJson(
+                                expectedVersion,
+                                cvSelection,
+                                coverLetterSelection)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+    }
+
+    private String selectionJson(
+            long expectedVersion,
+            String cvSelection,
+            String coverLetterSelection) {
+        return """
+                {"cvSelection":%s,"coverLetterSelection":%s,"expectedVersion":%d}
+                """.formatted(
+                        cvSelection, coverLetterSelection, expectedVersion);
+    }
+
+    private String selected(UUID documentId) {
+        return """
+                {"state":"SELECTED","documentId":"%s"}
+                """.formatted(documentId);
+    }
+
+    private String omitted() {
+        return "{\"state\":\"OMITTED\"}";
+    }
+
     private static String authorization(String subject) {
         return "Bearer " + JWKS.validToken(subject);
     }
@@ -1270,7 +1894,38 @@ class ApplicationRecordControllerIntegrationTest {
                 .version(1)
                 .contentSha256(
                         type == DocumentType.CV ? "a".repeat(64) : "b".repeat(64))
+                .evidenceProvenance(provenance())
+                .groundingState(
+                        DocumentGroundingState
+                                .AI_GENERATED_EVIDENCE_VALIDATED)
                 .build();
+    }
+
+    private DocumentEvidenceProvenance provenance() {
+        UUID evidenceId =
+                UUID.fromString("55555555-5555-4555-8555-555555555555");
+        return new DocumentEvidenceProvenance(
+                UUID.fromString(
+                        "33333333-3333-4333-8333-333333333333"),
+                "c".repeat(64),
+                UUID.fromString(
+                        "44444444-4444-4444-8444-444444444444"),
+                "d".repeat(64),
+                List.of(new EvidenceRevisionReference(
+                        evidenceId,
+                        UUID.fromString(
+                                "66666666-6666-4666-8666-666666666666"),
+                        2,
+                        EvidenceSection.EMPLOYMENT,
+                        "e".repeat(64))),
+                List.of(EvidenceSection.EMPLOYMENT),
+                new ValidatedClaimLedger(
+                        UUID.fromString(
+                                "99999999-9999-4999-8999-999999999999"),
+                        "f".repeat(64),
+                        "2.0.0",
+                        "3.0.0"),
+                OffsetDateTime.parse("2026-07-29T03:00:00Z"));
     }
 
     private CreateApplicationRequest validRequest() {
@@ -1301,6 +1956,11 @@ class ApplicationRecordControllerIntegrationTest {
                         .header(
                                 HttpHeaders.AUTHORIZATION,
                                 authorization(ownerId))
+                        .header(
+                                ApplicationRecordController.IDEMPOTENCY_KEY_HEADER,
+                                "APPLIED".equals(statusValue)
+                                        ? "apply-history-command"
+                                        : "unused-status-command")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
                                 UpdateStatusRequest.builder()

@@ -6,7 +6,11 @@ import com.jobseekercopilot.applicationtracker.dto.BeginDocumentReplacementReque
 import com.jobseekercopilot.applicationtracker.dto.CreateApplicationRequest;
 import com.jobseekercopilot.applicationtracker.dto.DocumentReplacementWorkflowResponse;
 import com.jobseekercopilot.applicationtracker.dto.DocumentReferenceReconciliationResponse;
+import com.jobseekercopilot.applicationtracker.dto.DocumentApplicationAssociationsResponse;
+import com.jobseekercopilot.applicationtracker.dto.DocumentAvailabilityResponse;
+import com.jobseekercopilot.applicationtracker.dto.UpdateDocumentAvailabilityRequest;
 import com.jobseekercopilot.applicationtracker.dto.RegisterReplacementDocumentRequest;
+import com.jobseekercopilot.applicationtracker.dto.SaveDocumentSelectionsRequest;
 import com.jobseekercopilot.applicationtracker.dto.UpdateStatusRequest;
 import com.jobseekercopilot.applicationtracker.dto.UpdateDocumentReferenceRequest;
 import com.jobseekercopilot.applicationtracker.dto.WithdrawGeneratedApplicationResponse;
@@ -17,7 +21,9 @@ import com.jobseekercopilot.applicationtracker.security.ApplicationOwnerResolver
 import com.jobseekercopilot.applicationtracker.service.ApplicationCreationResult;
 import com.jobseekercopilot.applicationtracker.service.ApplicationHistoryService;
 import com.jobseekercopilot.applicationtracker.service.ApplicationDocumentReconciliationService;
+import com.jobseekercopilot.applicationtracker.service.ApplicationDocumentSelectionService;
 import com.jobseekercopilot.applicationtracker.service.ApplicationRecordService;
+import com.jobseekercopilot.applicationtracker.service.DocumentAvailabilityProjectionService;
 import com.jobseekercopilot.applicationtracker.service.ApplicationReplacementWorkflowService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -42,6 +48,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -62,9 +69,12 @@ public class ApplicationRecordController {
     public static final String IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
 
     private final ApplicationRecordService service;
+    private final DocumentAvailabilityProjectionService
+            documentAvailabilityProjectionService;
     private final ApplicationReplacementWorkflowService replacementWorkflowService;
     private final ApplicationDocumentReconciliationService
             reconciliationService;
+    private final ApplicationDocumentSelectionService documentSelectionService;
     private final ApplicationHistoryService historyService;
     private final ApplicationOwnerResolver ownerResolver;
     private final ApplicationActorResolver actorResolver;
@@ -264,12 +274,61 @@ public class ApplicationRecordController {
         return ResponseEntity.ok(response);
     }
 
+    @GetMapping("/document/{documentId}/associations")
+    @Operation(
+            summary = "Get content-free associations for one exact document version",
+            description = "Returns every owner-scoped draft selection and frozen use. An empty list is authoritative and cross-owner identifiers remain non-enumerable.")
+    @SecurityRequirement(name = "serviceToken")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Authoritative association snapshot"),
+            @ApiResponse(responseCode = "401", description = "Missing or invalid service identity"),
+            @ApiResponse(responseCode = "403", description = "Service identity lacks association-read authority")
+    })
+    public ResponseEntity<DocumentApplicationAssociationsResponse>
+            getDocumentAssociations(
+                    @PathVariable UUID documentId,
+                    @Parameter(description = "Required owner context for the approved reader identity")
+                    @RequestHeader(ApplicationOwnerResolver.OWNER_HEADER)
+                    String requestedOwner,
+                    @Parameter(hidden = true) Authentication authentication) {
+        String ownerId = ownerResolver.resolve(authentication, requestedOwner);
+        return ResponseEntity.ok(
+                service.getDocumentAssociations(ownerId, documentId));
+    }
+
+    @PutMapping("/document/{documentId}/availability")
+    @Operation(
+            summary = "Project exact document availability into application history",
+            description = "Applies an ordered owner-scoped lifecycle projection. PURGED is terminal, retains the minimal exact identity/hash/source/selection tombstone and scrubs content-bearing evidence details.")
+    @SecurityRequirement(name = "serviceToken")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Availability projection applied or replayed"),
+            @ApiResponse(responseCode = "400", description = "Invalid or stale lifecycle projection"),
+            @ApiResponse(responseCode = "401", description = "Missing or invalid service identity"),
+            @ApiResponse(responseCode = "403", description = "Service identity lacks producer authority")
+    })
+    public ResponseEntity<DocumentAvailabilityResponse>
+            updateDocumentAvailability(
+                    @PathVariable UUID documentId,
+                    @Valid @RequestBody UpdateDocumentAvailabilityRequest request,
+                    @Parameter(description = "Required owner context for the approved producer identity")
+                    @RequestHeader(ApplicationOwnerResolver.OWNER_HEADER)
+                    String requestedOwner,
+                    @Parameter(hidden = true) Authentication authentication) {
+        String ownerId = ownerResolver.resolve(authentication, requestedOwner);
+        return ResponseEntity.ok(documentAvailabilityProjectionService.update(
+                ownerId, documentId, request));
+    }
+
     @PatchMapping(
             value = "/{id}/status",
             consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.APPLICATION_JSON_VALUE)
-    @Operation(summary = "Update application status")
+    @Operation(
+            summary = "Update application status",
+            description = "Bearer users follow the public lifecycle matrix. APPLIED requires expectedVersion and Idempotency-Key and atomically freezes exact selections and omissions. Approved producers are restricted to SAVED-to-DOCUMENTS_GENERATED and idempotent recovery of that completed bridge.")
     @SecurityRequirement(name = "bearerAuth")
+    @SecurityRequirement(name = "serviceToken")
     @ApiResponses(value = {
             @ApiResponse(
                     responseCode = "200",
@@ -283,6 +342,18 @@ public class ApplicationRecordController {
                     content = @Content(
                             mediaType = MediaType.APPLICATION_JSON_VALUE,
                             schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(
+                    responseCode = "401",
+                    description = "Missing or invalid authentication",
+                    content = @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = SecurityErrorResponse.class))),
+            @ApiResponse(
+                    responseCode = "403",
+                    description = "Authenticated identity is not permitted to perform the requested transition",
+                    content = @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = SecurityErrorResponse.class))),
             @ApiResponse(
                     responseCode = "409",
                     description = "Invalid lifecycle transition or stale/concurrent record version",
@@ -299,22 +370,37 @@ public class ApplicationRecordController {
     public ResponseEntity<ApplicationRecordResponse> updateStatus(
             @Parameter(description = "UUID of the application record") @PathVariable UUID id,
             @Valid @RequestBody UpdateStatusRequest request,
+            @Parameter(
+                    description = "Required owner-scoped retry key when status is APPLIED",
+                    schema = @Schema(
+                            minLength = 1,
+                            maxLength = 128,
+                            pattern = "[A-Za-z0-9][A-Za-z0-9._:-]{0,127}"))
+            @RequestHeader(value = IDEMPOTENCY_KEY_HEADER, required = false)
+            String idempotencyKey,
+            @Parameter(description = "Required owner context for approved service identities")
+            @RequestHeader(value = ApplicationOwnerResolver.OWNER_HEADER, required = false)
+            String requestedOwner,
             @Parameter(hidden = true) Authentication authentication) {
-        String ownerId = ownerResolver.resolve(authentication, null);
+        String ownerId = ownerResolver.resolve(authentication, requestedOwner);
         ApplicationRecordResponse response = service.updateStatus(
                 ownerId,
                 id,
                 request,
+                idempotencyKey,
                 actorResolver.resolve(authentication));
         return ResponseEntity.ok(response);
     }
 
     @PatchMapping("/{id}/document-reference")
-    @Operation(summary = "Replace a current approved document reference before application use")
+    @Operation(
+            summary = "Attach or replace a current approved document reference before application use",
+            description = "Legacy rolling-deploy endpoint for one selected slot. New clients must use the atomic document-selections command.",
+            deprecated = true)
     @SecurityRequirement(name = "bearerAuth")
     @SecurityRequirement(name = "serviceToken")
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "Current reference replaced"),
+            @ApiResponse(responseCode = "200", description = "Current reference attached or replaced"),
             @ApiResponse(responseCode = "400", description = "Reference is invalid or already frozen"),
             @ApiResponse(responseCode = "404", description = "Application record not found"),
             @ApiResponse(responseCode = "503", description = "Document reference validation unavailable")
@@ -330,6 +416,82 @@ public class ApplicationRecordController {
         return ResponseEntity.ok(service.updateDocumentReference(
                 ownerId,
                 id,
+                request,
+                actorResolver.resolve(authentication)));
+    }
+
+    @PutMapping(
+            value = "/{id}/document-selections",
+            produces = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(
+            summary = "Atomically save the complete optional document selection",
+            description = """
+                    Replaces the desired CV and cover-letter slots together while the
+                    application is SAVED or DOCUMENTS_GENERATED. Both slot objects are
+                    mandatory and must explicitly say SELECTED or OMITTED, preventing a
+                    partial rolling-deploy payload from being interpreted as a clear.
+                    Exact approved and available versions are verified against Document
+                    Store. Family current is recommendation metadata only.
+                    """)
+    @SecurityRequirement(name = "bearerAuth")
+    @SecurityRequirement(name = "serviceToken")
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Selection saved or exact command replayed",
+                    content = @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = ApplicationRecordResponse.class))),
+            @ApiResponse(
+                    responseCode = "400",
+                    description = "Invalid command, status or document reference",
+                    content = @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(
+                    responseCode = "404",
+                    description = "Application record not found",
+                    content = @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(
+                    responseCode = "409",
+                    description = "Stale record version or conflicting idempotency-key reuse",
+                    content = @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(
+                                    oneOf = {
+                                            com.jobseekercopilot.applicationtracker.dto.ApplicationVersionConflictResponse.class,
+                                            ErrorResponse.class
+                                    }))),
+            @ApiResponse(
+                    responseCode = "503",
+                    description = "Document reference validation unavailable",
+                    content = @Content(
+                            mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<ApplicationRecordResponse> saveDocumentSelections(
+            @Parameter(description = "UUID of the application record")
+            @PathVariable UUID id,
+            @Valid @RequestBody SaveDocumentSelectionsRequest request,
+            @Parameter(
+                    description = "Required owner-scoped retry key, fingerprinted to the complete payload",
+                    example = "save-documents-application-123-attempt-1",
+                    schema = @Schema(
+                            minLength = 1,
+                            maxLength = 128,
+                            pattern = "[A-Za-z0-9][A-Za-z0-9._:-]{0,127}"))
+            @RequestHeader(IDEMPOTENCY_KEY_HEADER) String idempotencyKey,
+            @Parameter(description = "Required owner context for approved service identities")
+            @RequestHeader(value = ApplicationOwnerResolver.OWNER_HEADER, required = false)
+            String requestedOwner,
+            @Parameter(hidden = true) Authentication authentication) {
+        String ownerId = ownerResolver.resolve(authentication, requestedOwner);
+        return ResponseEntity.ok(documentSelectionService.save(
+                ownerId,
+                id,
+                idempotencyKey,
                 request,
                 actorResolver.resolve(authentication)));
     }

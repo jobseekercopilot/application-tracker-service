@@ -17,6 +17,9 @@ import com.jobseekercopilot.applicationtracker.entity.ApplicationStatus;
 import com.jobseekercopilot.applicationtracker.exception.InvalidRequestException;
 import java.util.Optional;
 import java.util.UUID;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -44,8 +47,10 @@ class ApplicationCreationServiceTest {
     @BeforeEach
     void setUp() {
         service = new ApplicationCreationService(
-                transaction, documentReferenceVerifier,
-                new AuthoritativeJobSourcePolicy("LIVE"));
+                transaction,
+                documentReferenceVerifier,
+                new AuthoritativeJobSourcePolicy("LIVE"),
+                Clock.fixed(Instant.parse("2026-08-09T12:00:00Z"), ZoneOffset.UTC));
     }
 
     @Test
@@ -122,10 +127,52 @@ class ApplicationCreationServiceTest {
         assertThat(outcome.record().getAppliedAt()).isNotNull();
         assertThat(outcome.record().getCvDocumentId()).isNull();
         assertThat(outcome.record().getCoverLetterDocumentId()).isNull();
-        assertThat(outcome.record().getApplicationUsedAt()).isNull();
+        assertThat(outcome.record().getApplicationUsedAt())
+                .isEqualTo(outcome.record().getAppliedAt());
+        assertThat(outcome.record().getApplicationUsedCvState())
+                .isEqualTo(com.jobseekercopilot.applicationtracker.entity.FrozenDocumentSelectionState.OMITTED);
+        assertThat(outcome.record().getApplicationUsedCoverLetterState())
+                .isEqualTo(com.jobseekercopilot.applicationtracker.entity.FrozenDocumentSelectionState.OMITTED);
         assertThat(outcome.record().getProvider()).isEqualTo("MANUAL");
         verify(documentReferenceVerifier, never()).verify(
                 anyString(), any(UUID.class), anyString(), any(DocumentType.class));
+    }
+
+    @Test
+    void manualApplicationCanExplicitlyStartSavedWithAnApprovedDocument() {
+        CreateApplicationRequest request = CreateApplicationRequest.builder()
+                .userId("owner-1")
+                .jobId("manual-job-1")
+                .canonicalJobId("manual-job-1")
+                .provider("manual")
+                .externalJobId("manual-job-1")
+                .jobTitle("Support Engineer")
+                .companyName("Example Ltd")
+                .provenance(ApplicationProvenance.MANUAL)
+                .initialStatus(ApplicationStatus.SAVED)
+                .cvDocumentId(CV_ID)
+                .build();
+        when(transaction.findReplayOrRejectDuplicate(
+                        anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(Optional.empty());
+        when(documentReferenceVerifier.verify(
+                        "owner-1", CV_ID, "manual-job-1", DocumentType.CV))
+                .thenReturn(reference(CV_ID, DocumentType.CV, "manual-job-1"));
+        when(transaction.create(
+                        any(ApplicationRecord.class),
+                        any(ApplicationCommandActor.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        ApplicationCreationOutcome outcome =
+                service.createApplication("owner-1", "saved-attempt-1", request);
+
+        assertThat(outcome.record().getStatus())
+                .isEqualTo(ApplicationStatus.SAVED);
+        assertThat(outcome.record().getAppliedAt()).isNull();
+        assertThat(outcome.record().getCvDocumentId())
+                .isEqualTo(CV_ID.toString());
+        assertThat(outcome.record().getApplicationUsedCvDocumentId()).isNull();
+        assertThat(outcome.record().getApplicationUsedAt()).isNull();
     }
 
     @Test
@@ -266,6 +313,18 @@ class ApplicationCreationServiceTest {
                 .hasMessage("GENERATED applications require both approved document references.");
         verify(transaction, never()).findReplayOrRejectDuplicate(
                 anyString(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void generatedApplicationsRejectSavedInitialState() {
+        CreateApplicationRequest request = generatedRequest();
+        request.setInitialStatus(ApplicationStatus.SAVED);
+
+        assertThatThrownBy(() ->
+                service.createApplication("owner-1", "attempt-1", request))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining(
+                        "GENERATED applications may start as DOCUMENTS_GENERATED or APPLIED");
     }
 
     @Test

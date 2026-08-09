@@ -36,13 +36,17 @@ body owner.
 | Identity | Allowed operations | Intended callers |
 | --- | --- | --- |
 | Bearer user | Own create, list, record/document read, status, document-reference, withdraw and delete | Job Finder delegated user path |
-| Producer | Create, owner-scoped read and document-reference update | CV/cover-letter and document-generation services |
+| Producer | Create, owner-scoped read, document-reference update and lifecycle status update | CV/cover-letter and document-generation services |
 | Reader | Owner-scoped read only | Job Matching and Reporting |
 | Environment Data | `/internal/system-data/**` only | Controlled non-production fixture orchestration |
 
-The producer identity cannot change application status, withdraw or delete.
-The reader identity cannot mutate. The environment-data credential cannot use
-the public API, and Bearer/service identities cannot use System Data.
+The producer identity may change status only from `SAVED` to
+`DOCUMENTS_GENERATED` for an explicitly supplied owner, including an
+idempotent retry after that bridge completed. The same document-health and
+optimistic-concurrency rules apply as for Bearer users. It cannot mark an
+application `APPLIED`, advance later lifecycle stages, withdraw or delete. The
+reader identity cannot mutate. The environment-data credential cannot use the
+public API, and Bearer/service identities cannot use System Data.
 
 The credential alone cannot enable fixture operations. Application Tracker also
 requires the feature flag, exactly one active profile, and an exact `e2e`

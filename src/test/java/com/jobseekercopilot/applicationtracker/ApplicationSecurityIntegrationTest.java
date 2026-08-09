@@ -8,16 +8,19 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jobseekercopilot.applicationtracker.controller.ApplicationRecordController;
 import com.jobseekercopilot.applicationtracker.dto.CreateApplicationRequest;
 import com.jobseekercopilot.applicationtracker.dto.DocumentType;
 import com.jobseekercopilot.applicationtracker.dto.DocumentVersionReference;
 import com.jobseekercopilot.applicationtracker.dto.UpdateDocumentReferenceRequest;
 import com.jobseekercopilot.applicationtracker.dto.UpdateStatusRequest;
+import com.jobseekercopilot.applicationtracker.entity.ApplicationProvenance;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationRecord;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationStatus;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationRecordRepository;
@@ -26,6 +29,7 @@ import com.jobseekercopilot.applicationtracker.security.ApplicationOwnerResolver
 import com.jobseekercopilot.applicationtracker.security.ApplicationServiceIdentityFilter;
 import com.jobseekercopilot.applicationtracker.service.DocumentReferenceVerifier;
 import com.jobseekercopilot.applicationtracker.service.DocumentStoreWorkflowClient;
+import com.jobseekercopilot.applicationtracker.service.ApplicationAccountLifecycleService;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
@@ -45,6 +49,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 
 @SpringBootTest(properties = {
         "environment-data.enabled=true",
@@ -101,6 +106,9 @@ class ApplicationSecurityIntegrationTest {
     @MockBean
     private DocumentStoreWorkflowClient documentStoreWorkflowClient;
 
+    @MockBean
+    private ApplicationAccountLifecycleService accountLifecycleService;
+
     @BeforeEach
     void cleanDatabase() {
         workflowRepository.deleteAll();
@@ -114,6 +122,16 @@ class ApplicationSecurityIntegrationTest {
                         invocation.getArgument(1),
                         invocation.getArgument(2),
                         invocation.getArgument(3)));
+        when(documentReferenceVerifier.verify(
+                        anyString(),
+                        any(UUID.class),
+                        anyString(),
+                        any(UUID.class),
+                        any(DocumentType.class)))
+                .thenAnswer(invocation -> reference(
+                        invocation.getArgument(1),
+                        invocation.getArgument(2),
+                        invocation.getArgument(4)));
     }
 
     @Test
@@ -145,6 +163,164 @@ class ApplicationSecurityIntegrationTest {
     }
 
     @Test
+    void accountLifecycleTokensAreConfinedToTheInternalErasureRoute()
+            throws Exception {
+        String lifecycleToken = JWKS.accountLifecycleToken(
+                "lifecycle-owner", "operation-123");
+
+        mockMvc.perform(delete("/internal/account-lifecycle/personal-data")
+                        .header(HttpHeaders.AUTHORIZATION,
+                                "Bearer " + JWKS.validToken("lifecycle-owner")))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/applications/account-export")
+                        .header(HttpHeaders.AUTHORIZATION,
+                                "Bearer " + lifecycleToken))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(delete("/internal/account-lifecycle/personal-data")
+                        .header(HttpHeaders.AUTHORIZATION,
+                                "Bearer " + lifecycleToken))
+                .andExpect(status().isNoContent());
+
+        verify(accountLifecycleService).erase("lifecycle-owner");
+    }
+
+    @Test
+    void savedApplicationAttachesDocumentsAndProgressesOnlyWithCompletePair()
+            throws Exception {
+        String owner = "saved-owner";
+        CreateApplicationRequest request = CreateApplicationRequest.builder()
+                .userId(owner)
+                .jobId("saved-job-1")
+                .canonicalJobId("saved-job-1")
+                .provider("REED")
+                .externalJobId("reed-saved-1")
+                .jobTitle("Platform Engineer")
+                .companyName("Example Ltd")
+                .provenance(ApplicationProvenance.MANUAL)
+                .initialStatus(ApplicationStatus.SAVED)
+                .build();
+
+        MvcResult created = mockMvc.perform(post("/api/v1/applications")
+                        .header(HttpHeaders.AUTHORIZATION, authorization(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("SAVED"))
+                .andExpect(jsonPath("$.appliedAt").doesNotExist())
+                .andReturn();
+        UUID applicationId = UUID.fromString(objectMapper
+                .readTree(created.getResponse().getContentAsString())
+                .path("id")
+                .asText());
+
+        mockMvc.perform(patch(
+                                "/api/v1/applications/{id}/status",
+                                applicationId)
+                        .header(
+                                ApplicationServiceIdentityFilter.SERVICE_HEADER,
+                                PRODUCER_TOKEN)
+                        .header(
+                                ApplicationOwnerResolver.OWNER_HEADER,
+                                owner)
+                        .header(
+                                ApplicationRecordController.IDEMPOTENCY_KEY_HEADER,
+                                "producer-cannot-apply")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"status":"APPLIED","expectedVersion":0}
+                                """))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+
+        attachDocument(owner, applicationId, "CV", CV_ID);
+
+        mockMvc.perform(patch(
+                                "/api/v1/applications/{id}/status",
+                                applicationId)
+                        .header(
+                                ApplicationServiceIdentityFilter.SERVICE_HEADER,
+                                PRODUCER_TOKEN)
+                        .header(
+                                ApplicationOwnerResolver.OWNER_HEADER,
+                                owner)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"status":"DOCUMENTS_GENERATED"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message")
+                        .value("Document reference is not eligible for this application."));
+
+        attachDocument(
+                owner,
+                applicationId,
+                "COVER_LETTER",
+                COVER_LETTER_ID);
+
+        mockMvc.perform(patch(
+                                "/api/v1/applications/{id}/status",
+                                applicationId)
+                        .header(
+                                ApplicationServiceIdentityFilter.SERVICE_HEADER,
+                                PRODUCER_TOKEN)
+                        .header(
+                                ApplicationOwnerResolver.OWNER_HEADER,
+                                owner)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"status":"DOCUMENTS_GENERATED"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status")
+                        .value("DOCUMENTS_GENERATED"))
+                .andExpect(jsonPath("$.appliedAt").doesNotExist())
+                .andExpect(jsonPath("$.cvDocumentId")
+                        .value(CV_ID.toString()))
+                .andExpect(jsonPath("$.coverLetterDocumentId")
+                        .value(COVER_LETTER_ID.toString()));
+
+        mockMvc.perform(patch(
+                                "/api/v1/applications/{id}/status",
+                                applicationId)
+                        .header(
+                                ApplicationServiceIdentityFilter.SERVICE_HEADER,
+                                PRODUCER_TOKEN)
+                        .header(
+                                ApplicationOwnerResolver.OWNER_HEADER,
+                                owner)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"status":"DOCUMENTS_GENERATED"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status")
+                        .value("DOCUMENTS_GENERATED"));
+
+        mockMvc.perform(get(
+                                "/api/v1/applications/{id}/history",
+                                applicationId)
+                        .header(HttpHeaders.AUTHORIZATION, authorization(owner))
+                        .queryParam("size", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentStatus")
+                        .value("DOCUMENTS_GENERATED"))
+                .andExpect(jsonPath("$.reconciled").value(true))
+                .andExpect(jsonPath("$.events", hasSize(4)))
+                .andExpect(jsonPath("$.events[0].eventType")
+                        .value("APPLICATION_SAVED"))
+                .andExpect(jsonPath("$.events[0].toStatus").value("SAVED"))
+                .andExpect(jsonPath("$.events[1].eventType")
+                        .value("DOCUMENT_REFERENCE_CHANGED"))
+                .andExpect(jsonPath("$.events[2].eventType")
+                        .value("DOCUMENT_REFERENCE_CHANGED"))
+                .andExpect(jsonPath("$.events[3].eventType")
+                        .value("STATUS_CHANGED"))
+                .andExpect(jsonPath("$.events[3].fromStatus").value("SAVED"))
+                .andExpect(jsonPath("$.events[3].toStatus")
+                        .value("DOCUMENTS_GENERATED"));
+    }
+
+    @Test
     void foreignAndMissingResourcesHaveTheSameStableDenialAcrossOperations() throws Exception {
         ApplicationRecord alice = saveApplication("alice", ApplicationStatus.DOCUMENTS_GENERATED);
         UUID missing = UUID.randomUUID();
@@ -170,9 +346,15 @@ class ApplicationSecurityIntegrationTest {
 
         mockMvc.perform(patch("/api/v1/applications/{id}/status", alice.getId())
                         .header(HttpHeaders.AUTHORIZATION, authorization("bob"))
+                        .header(
+                                ApplicationRecordController.IDEMPOTENCY_KEY_HEADER,
+                                "foreign-apply")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                UpdateStatusRequest.builder().status("APPLIED").build())))
+                                UpdateStatusRequest.builder()
+                                        .status("APPLIED")
+                                        .expectedVersion(0L)
+                                        .build())))
                 .andExpect(status().isNotFound());
 
         mockMvc.perform(patch("/api/v1/applications/{id}/document-reference", alice.getId())
@@ -282,9 +464,57 @@ class ApplicationSecurityIntegrationTest {
         mockMvc.perform(patch("/api/v1/applications/{id}/status", id)
                         .header(ApplicationServiceIdentityFilter.SERVICE_HEADER, PRODUCER_TOKEN)
                         .header(ApplicationOwnerResolver.OWNER_HEADER, "alice")
+                        .header(
+                                ApplicationRecordController.IDEMPOTENCY_KEY_HEADER,
+                                "producer-apply-denied")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                UpdateStatusRequest.builder().status("APPLIED").build())))
+                                UpdateStatusRequest.builder()
+                                        .status("APPLIED")
+                                        .expectedVersion(0L)
+                                        .build())))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+
+        mockMvc.perform(patch("/api/v1/applications/{id}/status", id)
+                        .header(
+                                ApplicationServiceIdentityFilter.SERVICE_HEADER,
+                                PRODUCER_TOKEN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                UpdateStatusRequest.builder()
+                                        .status("APPLIED")
+                                        .build())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message")
+                        .value("Application owner is required for service requests."));
+
+        mockMvc.perform(patch("/api/v1/applications/{id}/status", id)
+                        .header(
+                                ApplicationServiceIdentityFilter.SERVICE_HEADER,
+                                PRODUCER_TOKEN)
+                        .header(ApplicationOwnerResolver.OWNER_HEADER, "bob")
+                        .header(
+                                ApplicationRecordController.IDEMPOTENCY_KEY_HEADER,
+                                "foreign-owner-apply")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                UpdateStatusRequest.builder()
+                                        .status("APPLIED")
+                                        .expectedVersion(0L)
+                                        .build())))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(patch("/api/v1/applications/{id}/status", id)
+                        .header(
+                                ApplicationServiceIdentityFilter.SERVICE_HEADER,
+                                READER_TOKEN)
+                        .header(ApplicationOwnerResolver.OWNER_HEADER, "alice")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                UpdateStatusRequest.builder()
+                                        .status("APPLIED")
+                                        .build())))
                 .andExpect(status().isForbidden());
 
         mockMvc.perform(get("/api/v1/applications/user/{userId}", "alice")
@@ -343,6 +573,47 @@ class ApplicationSecurityIntegrationTest {
                 .andExpect(status().isOk());
     }
 
+    @Test
+    void producerCanRelinkVerifiedDocumentsOnAnOwnerScopedUnappliedApplication()
+            throws Exception {
+        String owner = "generation-owner";
+        ApplicationRecord application =
+                saveApplication(owner, ApplicationStatus.DOCUMENTS_GENERATED);
+        String path = "/api/v1/applications/" + application.getId()
+                + "/document-selections";
+        String command = """
+                {
+                  "cvSelection":{"state":"SELECTED","documentId":"%s"},
+                  "coverLetterSelection":{"state":"SELECTED","documentId":"%s"},
+                  "expectedVersion":0
+                }
+                """.formatted(CV_ID, COVER_LETTER_ID);
+
+        mockMvc.perform(put(path)
+                        .header(
+                                ApplicationServiceIdentityFilter.SERVICE_HEADER,
+                                PRODUCER_TOKEN)
+                        .header(ApplicationOwnerResolver.OWNER_HEADER, owner)
+                        .header("Idempotency-Key", "generation-relink-1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(command))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.cvDocumentId").value(CV_ID.toString()))
+                .andExpect(jsonPath("$.coverLetterDocumentId")
+                        .value(COVER_LETTER_ID.toString()))
+                .andExpect(jsonPath("$.status").value("DOCUMENTS_GENERATED"));
+
+        mockMvc.perform(put(path)
+                        .header(
+                                ApplicationServiceIdentityFilter.SERVICE_HEADER,
+                                READER_TOKEN)
+                        .header(ApplicationOwnerResolver.OWNER_HEADER, owner)
+                        .header("Idempotency-Key", "reader-relink-denied")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(command))
+                .andExpect(status().isForbidden());
+    }
+
     private void assertAuthenticationFailure(String token) throws Exception {
         var request = get("/api/v1/applications/user/{userId}", "alice");
         if (token != null) {
@@ -392,6 +663,29 @@ class ApplicationSecurityIntegrationTest {
                 .cvDocumentId(CV_ID)
                 .coverLetterDocumentId(COVER_LETTER_ID)
                 .build();
+    }
+
+    private void attachDocument(
+            String owner,
+            UUID applicationId,
+            String type,
+            UUID documentId)
+            throws Exception {
+        mockMvc.perform(patch(
+                                "/api/v1/applications/{id}/document-reference",
+                                applicationId)
+                        .header(
+                                ApplicationServiceIdentityFilter.SERVICE_HEADER,
+                                PRODUCER_TOKEN)
+                        .header(ApplicationOwnerResolver.OWNER_HEADER, owner)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                UpdateDocumentReferenceRequest.builder()
+                                        .documentType(type)
+                                        .documentId(documentId)
+                                        .build())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SAVED"));
     }
 
     private DocumentVersionReference reference(

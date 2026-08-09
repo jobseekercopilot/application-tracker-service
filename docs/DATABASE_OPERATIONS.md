@@ -106,6 +106,16 @@ hashes. V10 adds one application/document-reference reconciliation row per
 current application, backfills inherited rows as `PENDING`, cascades that
 derived health row when its current application is removed, and extends the
 immutable event constraints for system-attributed safe repairs.
+V14 adds explicit `SELECTED`, `OMITTED` and legacy `UNKNOWN` application-used
+slot states plus the durable owner-scoped apply-command ledger. It also permits
+one immutable event of each type for a resulting record version so the
+content-freeze fact and lifecycle transition are independently auditable.
+V15 adds one owner/document availability projection with ordered lifecycle
+time, stable unavailable reason and terminal `PURGED` state. V19 extends current
+and frozen references with source, original-byte hash and selection time. Purge
+handling retains the minimal exact ID/version/hash/source/time tombstone while
+scrubbing content-bearing evidence details; a later availability event cannot
+restore purged content into live use.
 
 ## Recovery objectives
 
@@ -126,7 +136,7 @@ or restore-drill age breaches these targets.
 
 - creates the inherited V1 schema and record;
 - rejects an invalid status and invalid credentials;
-- upgrades through V2-V10, including guarded creation, append-only history,
+- upgrades through V2-V14, including guarded creation, append-only history,
   recoverable document workflows and reconciliation state;
 - proves inherited rows receive no invented immutable document reference;
 - proves inherited rows receive version zero;

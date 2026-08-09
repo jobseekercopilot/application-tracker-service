@@ -90,7 +90,7 @@ public class CreateApplicationRequest {
     private ApplicationProvenance provenance;
 
     @Schema(
-            description = "Initial lifecycle state. GENERATED may start as DOCUMENTS_GENERATED or APPLIED; MANUAL and EXTERNAL start as APPLIED.",
-            example = "APPLIED")
+            description = "Initial lifecycle state. GENERATED may start as DOCUMENTS_GENERATED or APPLIED; MANUAL and EXTERNAL default to APPLIED and may explicitly start as SAVED.",
+            example = "SAVED")
     private ApplicationStatus initialStatus;
 }

@@ -14,6 +14,7 @@ import com.jobseekercopilot.applicationtracker.entity.ApplicationStatus;
 import com.jobseekercopilot.applicationtracker.exception.ApplicationVersionConflictException;
 import com.jobseekercopilot.applicationtracker.exception.InvalidApplicationTransitionException;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationRecordRepository;
+import com.jobseekercopilot.applicationtracker.repository.DocumentAvailabilityProjectionRepository;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.UUID;
@@ -22,12 +23,16 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.access.AccessDeniedException;
 
 @ExtendWith(MockitoExtension.class)
 class ApplicationRecordLifecycleServiceTest {
 
     @Mock
     private ApplicationRecordRepository repository;
+
+    @Mock
+    private DocumentAvailabilityProjectionRepository availabilityRepository;
 
     @Mock
     private DocumentReferenceVerifier documentReferenceVerifier;
@@ -44,17 +49,22 @@ class ApplicationRecordLifecycleServiceTest {
     @Mock
     private ApplicationDocumentReconciliationService reconciliationService;
 
+    @Mock
+    private ApplicationAppliedFreezeService appliedFreezeService;
+
     private ApplicationRecordService service;
 
     @BeforeEach
     void setUp() {
         service = new ApplicationRecordService(
                 repository,
+                availabilityRepository,
                 documentReferenceVerifier,
                 applicationCreationService,
                 eventRecorder,
                 withdrawalWorkflowService,
-                reconciliationService);
+                reconciliationService,
+                appliedFreezeService);
     }
 
     @Test
@@ -112,8 +122,15 @@ class ApplicationRecordLifecycleServiceTest {
     void sameStatusRepeatIsIdempotentEvenWhenTheOriginalVersionIsStale() {
         ApplicationRecord record = record(ApplicationStatus.APPLIED, 3);
         LocalDateTime updatedAt = record.getUpdatedAt();
-        when(repository.findByIdAndUserId(record.getId(), record.getUserId()))
-                .thenReturn(Optional.of(record));
+        ApplicationRecordResponse replay = ApplicationRecordResponse.builder()
+                .id(record.getId())
+                .status(ApplicationStatus.APPLIED)
+                .version(3)
+                .updatedAt(updatedAt)
+                .build();
+        when(appliedFreezeService.apply(
+                        any(), any(), any(), any(), any()))
+                .thenReturn(replay);
 
         ApplicationRecordResponse response = service.updateStatus(
                 record.getUserId(),
@@ -123,6 +140,45 @@ class ApplicationRecordLifecycleServiceTest {
         assertThat(response.getStatus()).isEqualTo(ApplicationStatus.APPLIED);
         assertThat(response.getVersion()).isEqualTo(3);
         assertThat(response.getUpdatedAt()).isEqualTo(updatedAt);
+        verify(repository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void producerCannotAdvanceBeyondTheSavedDocumentPreparationBridge() {
+        ApplicationRecord record = record(ApplicationStatus.SAVED, 0);
+        when(appliedFreezeService.apply(
+                        any(), any(), any(), any(), any()))
+                .thenThrow(new AccessDeniedException(
+                        "Producer status commands cannot apply an application"));
+
+        assertThatThrownBy(() -> service.updateStatus(
+                        record.getUserId(),
+                        record.getId(),
+                        request("APPLIED", 0L),
+                        ApplicationCommandActor.service(
+                                "application-producer")))
+                .isInstanceOf(AccessDeniedException.class);
+
+        assertThat(record.getStatus()).isEqualTo(ApplicationStatus.SAVED);
+        verify(repository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void producerCanIdempotentlyRecoverCompletedDocumentPreparation() {
+        ApplicationRecord record =
+                record(ApplicationStatus.DOCUMENTS_GENERATED, 3);
+        when(repository.findByIdAndUserId(record.getId(), record.getUserId()))
+                .thenReturn(Optional.of(record));
+
+        ApplicationRecordResponse response = service.updateStatus(
+                record.getUserId(),
+                record.getId(),
+                request("DOCUMENTS_GENERATED", 2L),
+                ApplicationCommandActor.service("application-producer"));
+
+        assertThat(response.getStatus())
+                .isEqualTo(ApplicationStatus.DOCUMENTS_GENERATED);
+        assertThat(response.getVersion()).isEqualTo(3);
         verify(repository, never()).saveAndFlush(any());
     }
 
@@ -159,7 +215,8 @@ class ApplicationRecordLifecycleServiceTest {
         LocalDateTime now = LocalDateTime.of(2026, 7, 26, 18, 0);
         String cvId = "11111111-1111-4111-8111-111111111111";
         String coverLetterId = "22222222-2222-4222-8222-222222222222";
-        boolean progressed = status != ApplicationStatus.DOCUMENTS_GENERATED;
+        boolean progressed = status != ApplicationStatus.SAVED
+                && status != ApplicationStatus.DOCUMENTS_GENERATED;
         return ApplicationRecord.builder()
                 .id(UUID.randomUUID())
                 .userId("synthetic-owner")
@@ -190,7 +247,10 @@ class ApplicationRecordLifecycleServiceTest {
                 .status(status)
                 .createdAt(now.minusDays(2))
                 .updatedAt(now.minusDays(1))
-                .appliedAt(status == ApplicationStatus.DOCUMENTS_GENERATED
+                .appliedAt(status == ApplicationStatus.SAVED
+                                || status
+                                        == ApplicationStatus
+                                                .DOCUMENTS_GENERATED
                         ? null
                         : now.minusDays(1))
                 .version(version)

@@ -1,5 +1,17 @@
 # Application Tracker Service
 
+## Role in Job Seeker Copilot
+
+| Role | Called by | Calls | Data | Local port |
+|---|---|---|---|---:|
+| System of record for applications, lifecycle, immutable events and exact document references | Job Finder, Document Generation, Reporting and lifecycle coordinators | Document Store for recoverable document workflows | Own PostgreSQL database | 8088 |
+
+See the central [application journey](https://docs.jobseekercopilot.com/journeys/applications/), [document journey](https://docs.jobseekercopilot.com/journeys/documents/), and [data ownership](https://docs.jobseekercopilot.com/data/ownership/).
+
+Uploaded selections are accepted only after Document Store confirms the exact
+approved immutable version belongs to the same owner, job, application, and
+document type; Application Tracker commits the selection atomically.
+
 Spring Boot service for the inherited Job Seeker Copilot application-record,
 status and generated-document reference model.
 
@@ -35,7 +47,7 @@ backup and restore without calling AWS or any paid service. See
 [`docs/DATABASE_OPERATIONS.md`](docs/DATABASE_OPERATIONS.md).
 
 Application status changes follow a documented forward-only lifecycle. Invalid
-or stale updates return `409`, same-status retries are idempotent, and every
+or stale updates return `409`, exact command replays are idempotent, and every
 accepted mutation appends an immutable actor/source-attributed event in the
 same transaction. Every response publishes the record's optimistic `version`.
 See
@@ -54,7 +66,7 @@ verification before building the image. The Docker build compiles the test
 sources but does not execute the PostgreSQL Testcontainers suite because a
 standard image build must not receive the host Docker socket.
 
-The version `3.5.0` contract retains the owner-scoped public list and lifecycle
+The version `4.8.0` contract retains the owner-scoped public list and lifecycle
 concurrency contracts while replacing the unsafe raw-entity System Data routes
 with a constrained, versioned, owner-and-scenario-scoped fixture boundary and
 adds backward-compatible activity-history, recoverable generated-withdrawal
@@ -67,9 +79,63 @@ metadata with each tracked job. NHS fixture URLs are accepted only in the
 explicit fixture source mode; live mode accepts only the official vacancy path.
 It also publishes owner-scoped reconciliation state, safely repairs missing
 immutable reference metadata, and blocks lifecycle progression when references
-are unverified. It continues to publish the explicit response and stable
+are unverified. Current and application-used references now include immutable
+profile, evidence-snapshot, claim-ledger and grounding provenance. It continues
+to publish the explicit response and stable
 authentication, authorization, conflict and owner-mismatch error schemas used
-by consumers.
+by consumers. Version `4.0.0` also aligns evidence-section values with the
+canonical User Profile and Document Store taxonomy so approved generated
+document references can be consumed without translation.
+
+Version `4.6.0` adds content-free activity types for the first explicit
+application document choice, later changed choices, and the existing exact
+apply-time freeze. Retry replays and later commands that preserve both choices
+do not add duplicate activity.
+
+Version `4.7.0` records a newly created `SAVED` application as the explicit,
+content-free `APPLICATION_SAVED` activity. Other creation modes retain
+`APPLICATION_CREATED`, and idempotent creation replay does not duplicate either
+event.
+
+Version `4.8.0` adds owner, source, original-byte hash and selection time to
+current and frozen exact-version descriptors. Apply preserves the selected
+timestamp for zero, one or two slots; archive/delete/purge projections never
+substitute another version. `PURGED` remains terminal and retains only the
+minimal exact ID/version/hash/source/time tombstone plus availability metadata,
+while content-bearing evidence provenance is removed.
+
+Version `4.1.0` adds the authoritative `SAVED` lifecycle state. Existing
+manual/external requests still default to `APPLIED`; callers opt into `SAVED`
+explicitly and may attach validated documents before progressing.
+
+Version `4.2.0` adds one retry-safe atomic Save command for the complete
+optional CV and cover-letter selection. Both slots must explicitly be
+`SELECTED` or `OMITTED`; the command rejects stale record versions, persists a
+payload-fingerprinted owner-scoped idempotency outcome, and preserves the
+single-slot endpoint as a deprecated rolling-deploy bridge.
+
+Version `4.3.0` makes the first successful transition into `APPLIED` the only
+document-freeze boundary. The command requires `expectedVersion` and an
+owner-scoped `Idempotency-Key`, re-verifies each present exact version, and
+atomically stores `SELECTED` or `OMITTED` for both frozen slots, one freeze
+time, the applied status/time, a durable replay outcome, and content-free
+freeze/status events. Existing ambiguous rows migrate as `UNKNOWN` rather than
+inventing an omission.
+
+Version `4.4.0` adds content-free exact-document association lookup and an
+ordered availability projection for archive, recoverable deletion, restore and
+purge. `PURGED` is terminal: Tracker retains exact application/family/version
+identity and draft/frozen association state while scrubbing complete hashes and
+evidence details. Version `4.8.0` corrects that legacy projection behaviour:
+the approved minimal tombstone retains exact hashes, source and selection time
+while content-bearing evidence details are scrubbed. Cross-owner lookups return
+an empty authoritative snapshot.
+
+Version `4.5.0` adds a no-store account export and an internal, idempotent
+personal-data erasure step. The internal route accepts only a short-lived
+account-lifecycle token with an operation ID; ordinary user tokens cannot call
+it. A narrowly scoped PostgreSQL transaction override permits account erasure
+without weakening the append-only event invariant for normal application code.
 
 ## Security boundary
 

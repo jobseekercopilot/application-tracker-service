@@ -121,7 +121,7 @@ public class ApplicationDocumentReconciliationService {
 
     @Transactional(propagation = Propagation.MANDATORY, readOnly = true)
     public void requireHealthy(ApplicationRecord application) {
-        if (application.getProvenance() != ApplicationProvenance.GENERATED) {
+        if (!hasAnyReference(application)) {
             return;
         }
         ApplicationDocumentReconciliation reconciliation =
@@ -170,6 +170,7 @@ public class ApplicationDocumentReconciliationService {
                                 application.getUserId(),
                                 documentId,
                                 application.getJobId(),
+                                application.getId(),
                                 stored.role().documentType());
                 if (!stored.compatibleWith(reference)) {
                     issues.add(stored.role().code("METADATA_MISMATCH"));
@@ -303,10 +304,11 @@ public class ApplicationDocumentReconciliationService {
     private List<StoredReference> references(ApplicationRecord application) {
         boolean generated =
                 application.getProvenance() == ApplicationProvenance.GENERATED;
-        boolean submittedGenerated =
-                generated
-                        && application.getStatus()
-                                != ApplicationStatus.DOCUMENTS_GENERATED;
+        boolean prepared =
+                application.getStatus()
+                        == ApplicationStatus.DOCUMENTS_GENERATED;
+        boolean currentPairRequired = generated || prepared;
+        boolean usedPairRequired = hasCompleteUsedPair(application);
         List<StoredReference> references = new ArrayList<>(4);
         references.add(new StoredReference(
                 ReferenceRole.CURRENT_CV,
@@ -314,29 +316,53 @@ public class ApplicationDocumentReconciliationService {
                 application.getCvDocumentFamilyId(),
                 application.getCvDocumentVersion(),
                 application.getCvDocumentContentSha256(),
-                generated));
+                application.getCvDocumentSourceType(),
+                application.getCvDocumentOriginalContentSha256(),
+                application.getCvDocumentSelectedAt(),
+                currentPairRequired));
         references.add(new StoredReference(
                 ReferenceRole.CURRENT_COVER_LETTER,
                 application.getCoverLetterDocumentId(),
                 application.getCoverLetterDocumentFamilyId(),
                 application.getCoverLetterDocumentVersion(),
                 application.getCoverLetterDocumentContentSha256(),
-                generated));
+                application.getCoverLetterDocumentSourceType(),
+                application.getCoverLetterDocumentOriginalContentSha256(),
+                application.getCoverLetterDocumentSelectedAt(),
+                currentPairRequired));
         references.add(new StoredReference(
                 ReferenceRole.USED_CV,
                 application.getApplicationUsedCvDocumentId(),
                 application.getApplicationUsedCvDocumentFamilyId(),
                 application.getApplicationUsedCvDocumentVersion(),
                 application.getApplicationUsedCvDocumentContentSha256(),
-                submittedGenerated));
+                application.getApplicationUsedCvDocumentSourceType(),
+                application.getApplicationUsedCvDocumentOriginalContentSha256(),
+                application.getApplicationUsedCvDocumentSelectedAt(),
+                usedPairRequired));
         references.add(new StoredReference(
                 ReferenceRole.USED_COVER_LETTER,
                 application.getApplicationUsedCoverLetterDocumentId(),
                 application.getApplicationUsedCoverLetterDocumentFamilyId(),
                 application.getApplicationUsedCoverLetterDocumentVersion(),
                 application.getApplicationUsedCoverLetterDocumentContentSha256(),
-                submittedGenerated));
+                application.getApplicationUsedCoverLetterDocumentSourceType(),
+                application.getApplicationUsedCoverLetterDocumentOriginalContentSha256(),
+                application.getApplicationUsedCoverLetterDocumentSelectedAt(),
+                usedPairRequired));
         return references;
+    }
+
+    private boolean hasAnyReference(ApplicationRecord application) {
+        return application.getCvDocumentId() != null
+                || application.getCoverLetterDocumentId() != null
+                || application.getApplicationUsedCvDocumentId() != null
+                || application.getApplicationUsedCoverLetterDocumentId() != null;
+    }
+
+    private boolean hasCompleteUsedPair(ApplicationRecord application) {
+        return application.getApplicationUsedCvDocumentId() != null
+                && application.getApplicationUsedCoverLetterDocumentId() != null;
     }
 
     private ApplicationDocumentReconciliation newReconciliation(
@@ -404,12 +430,18 @@ public class ApplicationDocumentReconciliationService {
             String familyId,
             Integer version,
             String contentSha256,
+            com.jobseekercopilot.applicationtracker.dto.DocumentSourceType sourceType,
+            String originalContentSha256,
+            LocalDateTime selectedAt,
             boolean required) {
 
         private boolean hasMetadata() {
             return familyId != null
                     || version != null
-                    || contentSha256 != null;
+                    || contentSha256 != null
+                    || sourceType != null
+                    || originalContentSha256 != null
+                    || selectedAt != null;
         }
 
         private boolean compatibleWith(
@@ -425,7 +457,13 @@ public class ApplicationDocumentReconciliationService {
                     && (contentSha256 == null
                             || Objects.equals(
                                     contentSha256,
-                                    reference.getContentSha256()));
+                                    reference.getContentSha256()))
+                    && (sourceType == null
+                            || sourceType == reference.getSourceType())
+                    && (originalContentSha256 == null
+                            || Objects.equals(
+                                    originalContentSha256,
+                                    reference.getOriginalContentSha256()));
         }
     }
 
@@ -480,6 +518,34 @@ public class ApplicationDocumentReconciliationService {
                         reference.getContentSha256());
                 changed = true;
             }
+            if (application.getCvDocumentSourceType() == null
+                    && reference.getSourceType() != null) {
+                application.setCvDocumentSourceType(reference.getSourceType());
+                changed = true;
+            }
+            if (application.getCvDocumentOriginalContentSha256() == null
+                    && reference.getOriginalContentSha256() != null) {
+                application.setCvDocumentOriginalContentSha256(
+                        reference.getOriginalContentSha256());
+                changed = true;
+            }
+            if (application.getCvDocumentSelectedAt() == null) {
+                application.setCvDocumentSelectedAt(
+                        application.getUpdatedAt());
+                changed = true;
+            }
+            if (application.getCvDocumentEvidenceProvenance() == null
+                    && reference.getEvidenceProvenance() != null) {
+                application.setCvDocumentEvidenceProvenance(
+                        reference.getEvidenceProvenance());
+                changed = true;
+            }
+            if (application.getCvDocumentGroundingState() == null
+                    && reference.getGroundingState() != null) {
+                application.setCvDocumentGroundingState(
+                        reference.getGroundingState());
+                changed = true;
+            }
             return changed;
         }
 
@@ -500,6 +566,35 @@ public class ApplicationDocumentReconciliationService {
             if (application.getCoverLetterDocumentContentSha256() == null) {
                 application.setCoverLetterDocumentContentSha256(
                         reference.getContentSha256());
+                changed = true;
+            }
+            if (application.getCoverLetterDocumentSourceType() == null
+                    && reference.getSourceType() != null) {
+                application.setCoverLetterDocumentSourceType(
+                        reference.getSourceType());
+                changed = true;
+            }
+            if (application.getCoverLetterDocumentOriginalContentSha256() == null
+                    && reference.getOriginalContentSha256() != null) {
+                application.setCoverLetterDocumentOriginalContentSha256(
+                        reference.getOriginalContentSha256());
+                changed = true;
+            }
+            if (application.getCoverLetterDocumentSelectedAt() == null) {
+                application.setCoverLetterDocumentSelectedAt(
+                        application.getUpdatedAt());
+                changed = true;
+            }
+            if (application.getCoverLetterDocumentEvidenceProvenance() == null
+                    && reference.getEvidenceProvenance() != null) {
+                application.setCoverLetterDocumentEvidenceProvenance(
+                        reference.getEvidenceProvenance());
+                changed = true;
+            }
+            if (application.getCoverLetterDocumentGroundingState() == null
+                    && reference.getGroundingState() != null) {
+                application.setCoverLetterDocumentGroundingState(
+                        reference.getGroundingState());
                 changed = true;
             }
             return changed;
@@ -523,6 +618,37 @@ public class ApplicationDocumentReconciliationService {
                     .getApplicationUsedCvDocumentContentSha256() == null) {
                 application.setApplicationUsedCvDocumentContentSha256(
                         reference.getContentSha256());
+                changed = true;
+            }
+            if (application.getApplicationUsedCvDocumentSourceType() == null
+                    && reference.getSourceType() != null) {
+                application.setApplicationUsedCvDocumentSourceType(
+                        reference.getSourceType());
+                changed = true;
+            }
+            if (application
+                            .getApplicationUsedCvDocumentOriginalContentSha256()
+                    == null
+                    && reference.getOriginalContentSha256() != null) {
+                application.setApplicationUsedCvDocumentOriginalContentSha256(
+                        reference.getOriginalContentSha256());
+                changed = true;
+            }
+            if (application.getApplicationUsedCvDocumentSelectedAt() == null) {
+                application.setApplicationUsedCvDocumentSelectedAt(
+                        application.getApplicationUsedAt());
+                changed = true;
+            }
+            if (application.getApplicationUsedCvEvidenceProvenance() == null
+                    && reference.getEvidenceProvenance() != null) {
+                application.setApplicationUsedCvEvidenceProvenance(
+                        reference.getEvidenceProvenance());
+                changed = true;
+            }
+            if (application.getApplicationUsedCvGroundingState() == null
+                    && reference.getGroundingState() != null) {
+                application.setApplicationUsedCvGroundingState(
+                        reference.getGroundingState());
                 changed = true;
             }
             return changed;
@@ -549,6 +675,45 @@ public class ApplicationDocumentReconciliationService {
                     == null) {
                 application.setApplicationUsedCoverLetterDocumentContentSha256(
                         reference.getContentSha256());
+                changed = true;
+            }
+            if (application
+                            .getApplicationUsedCoverLetterDocumentSourceType()
+                    == null
+                    && reference.getSourceType() != null) {
+                application.setApplicationUsedCoverLetterDocumentSourceType(
+                        reference.getSourceType());
+                changed = true;
+            }
+            if (application
+                            .getApplicationUsedCoverLetterDocumentOriginalContentSha256()
+                    == null
+                    && reference.getOriginalContentSha256() != null) {
+                application
+                        .setApplicationUsedCoverLetterDocumentOriginalContentSha256(
+                                reference.getOriginalContentSha256());
+                changed = true;
+            }
+            if (application
+                            .getApplicationUsedCoverLetterDocumentSelectedAt()
+                    == null) {
+                application.setApplicationUsedCoverLetterDocumentSelectedAt(
+                        application.getApplicationUsedAt());
+                changed = true;
+            }
+            if (application
+                            .getApplicationUsedCoverLetterEvidenceProvenance()
+                    == null
+                    && reference.getEvidenceProvenance() != null) {
+                application.setApplicationUsedCoverLetterEvidenceProvenance(
+                        reference.getEvidenceProvenance());
+                changed = true;
+            }
+            if (application.getApplicationUsedCoverLetterGroundingState()
+                    == null
+                    && reference.getGroundingState() != null) {
+                application.setApplicationUsedCoverLetterGroundingState(
+                        reference.getGroundingState());
                 changed = true;
             }
             return changed;

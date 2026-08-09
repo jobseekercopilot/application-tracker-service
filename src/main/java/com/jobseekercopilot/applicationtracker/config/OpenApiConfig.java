@@ -44,13 +44,26 @@ public class OpenApiConfig {
                                 
                                 This service validates and stores exact approved Document Store version
                                 references. Current editable selections are separate from the immutable
-                                versions frozen when an application first progresses.
+                                versions and explicit omissions frozen only when an application
+                                first enters APPLIED.
+                                Atomic document-selection commands require explicit SELECTED or OMITTED
+                                state for both optional slots, an expected record version and a durable
+                                owner-scoped idempotency key.
+                                Applying requires expectedVersion and Idempotency-Key, re-verifies
+                                every selected exact version, and commits both frozen slot states,
+                                timestamps and content-free events atomically.
                                 Durable reconciliation verifies both reference sets against Document Store,
                                 repairs only missing immutable metadata, and reports conflicts without
                                 overwriting historical evidence.
+                                Ordered Store lifecycle projections mark exact references archived,
+                                deleted or purged. Purge keeps family/version identity and association
+                                history, exact hashes, source and selection time while scrubbing
+                                content-bearing evidence details. Purged content cannot be restored
+                                into live use.
                                 It does NOT store document contents.
                                 
                                 ApplicationStatus values:
+                                - SAVED - Job has been saved to the claimant's applications
                                 - DOCUMENTS_GENERATED - Documents have been generated for the job
                                 - APPLIED - Application has been submitted
                                 - INTERVIEW - Interview stage
@@ -60,7 +73,7 @@ public class OpenApiConfig {
                                 - REJECTED_BY_USER - Offer or opportunity rejected by the user
                                 - WITHDRAWN - User withdrew their application
                                 """)
-                        .version("3.5.0")
+                        .version("4.8.0")
                         .contact(new Contact()
                                 .name("Jobseeker Copilot"))
                         .license(new License()

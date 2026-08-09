@@ -24,7 +24,7 @@ class ApplicationContractPolicyTest {
         JsonNode operation =
                 contract.at("/paths/~1api~1v1~1applications~1user~1{userId}/get");
 
-        assertEquals("3.5.0", contract.at("/info/version").asText());
+        assertEquals("4.8.0", contract.at("/info/version").asText());
         assertEquals("getApplicationsForUser", operation.path("operationId").asText());
         assertEquals(
                         Set.of("bearerAuth", "serviceToken"),
@@ -73,6 +73,21 @@ class ApplicationContractPolicyTest {
                 "version")));
         assertTrue(!requiredFields.contains("cvDocumentId"));
         assertTrue(!requiredFields.contains("coverLetterDocumentId"));
+
+        JsonNode eventTypes = contract.at(
+                "/components/schemas/ApplicationEventResponse/properties/eventType/enum");
+        assertTrue(eventTypes.toString().contains("APPLICATION_SAVED"));
+        assertTrue(eventTypes.toString().contains("APPLICATION_DOCUMENT_SELECTED"));
+        assertTrue(eventTypes.toString().contains(
+                "APPLICATION_DOCUMENT_SELECTION_CHANGED"));
+        assertTrue(eventTypes.toString().contains("APPLICATION_DOCUMENTS_FROZEN"));
+
+        JsonNode exactReference = contract.at(
+                "/components/schemas/DocumentVersionReference/properties");
+        assertTrue(exactReference.has("ownerId"));
+        assertTrue(exactReference.has("sourceType"));
+        assertTrue(exactReference.has("originalContentSha256"));
+        assertTrue(exactReference.has("selectedAt"));
     }
 
     @Test
@@ -106,6 +121,19 @@ class ApplicationContractPolicyTest {
                 .collect(Collectors.toSet());
         assertTrue(!required.contains("cvDocumentId"));
         assertTrue(!required.contains("coverLetterDocumentId"));
+
+        Set<String> statuses = StreamSupport.stream(
+                        createProperties.path("initialStatus")
+                                .path("enum")
+                                .spliterator(),
+                        false)
+                .map(JsonNode::asText)
+                .collect(Collectors.toSet());
+        assertTrue(statuses.contains("SAVED"));
+        assertTrue(createProperties.path("initialStatus")
+                .path("description")
+                .asText()
+                .contains("explicitly start as SAVED"));
     }
 
     @Test
@@ -115,6 +143,30 @@ class ApplicationContractPolicyTest {
         JsonNode operation =
                 contract.at("/paths/~1api~1v1~1applications~1{id}~1status/patch");
 
+        assertEquals(
+                Set.of("bearerAuth", "serviceToken"),
+                StreamSupport.stream(
+                                operation.path("security").spliterator(),
+                                false)
+                        .flatMap(requirement -> StreamSupport.stream(
+                                Spliterators.spliteratorUnknownSize(
+                                        requirement.fieldNames(), 0),
+                                false))
+                        .collect(Collectors.toSet()));
+        assertTrue(StreamSupport.stream(
+                        operation.path("parameters").spliterator(), false)
+                .anyMatch(parameter ->
+                        "X-Application-Owner".equals(
+                                parameter.path("name").asText())));
+        JsonNode idempotencyKey = StreamSupport.stream(
+                        operation.path("parameters").spliterator(), false)
+                .filter(parameter -> "Idempotency-Key".equals(
+                        parameter.path("name").asText()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(128, idempotencyKey.at("/schema/maxLength").asInt());
+        assertTrue(idempotencyKey.at("/description").asText()
+                .contains("APPLIED"));
         assertEquals(
                 "#/components/schemas/UpdateStatusRequest",
                 operation.at("/requestBody/content/application~1json/schema/$ref").asText());
@@ -142,6 +194,82 @@ class ApplicationContractPolicyTest {
                 500,
                 contract.at("/components/schemas/UpdateStatusRequest/properties/reason/maxLength")
                         .asInt());
+        assertTrue(contract.at(
+                        "/components/schemas/ApplicationRecordResponse/properties/applicationUsedCvState")
+                .has("description"));
+        assertTrue(contract.at(
+                        "/components/schemas/ApplicationRecordResponse/properties/applicationUsedCoverLetterState")
+                .has("description"));
+    }
+
+    @Test
+    void documentSelectionContractIsAtomicExplicitAndRetrySafe()
+            throws Exception {
+        JsonNode contract = objectMapper.readTree(CONTRACT.toFile());
+        JsonNode operation = contract.at(
+                "/paths/~1api~1v1~1applications~1{id}~1document-selections/put");
+
+        assertEquals(
+                "#/components/schemas/SaveDocumentSelectionsRequest",
+                operation.at(
+                        "/requestBody/content/application~1json/schema/$ref")
+                        .asText());
+        assertTrue(operation.path("responses").has("409"));
+        assertTrue(operation.path("responses").has("503"));
+        assertTrue(StreamSupport.stream(
+                        operation.path("parameters").spliterator(), false)
+                .anyMatch(parameter ->
+                        "Idempotency-Key".equals(parameter.path("name").asText())
+                                && parameter.path("required").asBoolean()));
+
+        Set<String> requestRequired = StreamSupport.stream(
+                        contract.at(
+                                        "/components/schemas/SaveDocumentSelectionsRequest/required")
+                                .spliterator(),
+                        false)
+                .map(JsonNode::asText)
+                .collect(Collectors.toSet());
+        assertEquals(
+                Set.of("cvSelection", "coverLetterSelection", "expectedVersion"),
+                requestRequired);
+        assertEquals(
+                0,
+                contract.at(
+                                "/components/schemas/SaveDocumentSelectionsRequest/properties/expectedVersion/minimum")
+                        .asInt());
+        assertTrue(contract.at(
+                        "/components/schemas/SaveDocumentSelectionsRequest/properties/expectedVersion")
+                .has("minimum"));
+        assertEquals(
+                "#/components/schemas/ApplicationRecordResponse",
+                operation.at(
+                                "/responses/200/content/application~1json/schema/$ref")
+                        .asText());
+        assertEquals(
+                "#/components/schemas/ErrorResponse",
+                operation.at(
+                                "/responses/400/content/application~1json/schema/$ref")
+                        .asText());
+
+        Set<String> states = StreamSupport.stream(
+                        contract.at(
+                                        "/components/schemas/DocumentSelectionCommand/properties/state/enum")
+                                .spliterator(),
+                        false)
+                .map(JsonNode::asText)
+                .collect(Collectors.toSet());
+        assertEquals(Set.of("SELECTED", "OMITTED"), states);
+        assertTrue(StreamSupport.stream(
+                        contract.at(
+                                        "/components/schemas/DocumentSelectionCommand/required")
+                                .spliterator(),
+                        false)
+                .map(JsonNode::asText)
+                .collect(Collectors.toSet())
+                .contains("state"));
+        assertTrue(contract.at(
+                        "/paths/~1api~1v1~1applications~1{id}~1document-reference/patch/deprecated")
+                .asBoolean());
     }
 
     @Test
@@ -279,5 +407,47 @@ class ApplicationContractPolicyTest {
         assertTrue(fixtureRecord.has("updatedAt"));
         assertTrue(!fixtureRecord.has("userId"));
         assertTrue(!fixtureRecord.has("fixtureScenarioId"));
+    }
+
+    @Test
+    void lifecycleProjectionContractIsContentFreeAndHashOptional()
+            throws Exception {
+        JsonNode contract = objectMapper.readTree(CONTRACT.toFile());
+        JsonNode associations = contract.at(
+                "/paths/~1api~1v1~1applications~1document~1{documentId}~1associations/get");
+        JsonNode availability = contract.at(
+                "/paths/~1api~1v1~1applications~1document~1{documentId}~1availability/put");
+
+        assertEquals(
+                "getDocumentAssociations",
+                associations.path("operationId").asText());
+        assertEquals(
+                "updateDocumentAvailability",
+                availability.path("operationId").asText());
+        assertEquals(
+                "#/components/schemas/UpdateDocumentAvailabilityRequest",
+                availability.at(
+                                "/requestBody/content/application~1json/schema/$ref")
+                        .asText());
+        JsonNode reference = contract.at(
+                "/components/schemas/DocumentVersionReference/properties");
+        assertTrue(reference.has("availability"));
+        assertTrue(reference.has("unavailableReason"));
+        assertTrue(reference.has("unavailableAt"));
+        assertTrue(!StreamSupport.stream(
+                        contract.at(
+                                        "/components/schemas/DocumentVersionReference/required")
+                                .spliterator(),
+                        false)
+                .map(JsonNode::asText)
+                .collect(Collectors.toSet())
+                .contains("contentSha256"));
+        JsonNode association = contract.at(
+                "/components/schemas/DocumentApplicationAssociation/properties");
+        assertTrue(association.has("associationState"));
+        assertTrue(!association.has("content"));
+        assertTrue(!association.has("contentSha256"));
+        assertTrue(!association.has("fileName"));
+        assertTrue(!association.has("evidenceProvenance"));
     }
 }
