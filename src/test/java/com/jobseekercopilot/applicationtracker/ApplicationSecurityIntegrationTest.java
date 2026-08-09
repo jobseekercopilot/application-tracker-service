@@ -297,7 +297,7 @@ class ApplicationSecurityIntegrationTest {
                 .andExpect(jsonPath("$.reconciled").value(true))
                 .andExpect(jsonPath("$.events", hasSize(4)))
                 .andExpect(jsonPath("$.events[0].eventType")
-                        .value("APPLICATION_CREATED"))
+                        .value("APPLICATION_SAVED"))
                 .andExpect(jsonPath("$.events[0].toStatus").value("SAVED"))
                 .andExpect(jsonPath("$.events[1].eventType")
                         .value("DOCUMENT_REFERENCE_CHANGED"))

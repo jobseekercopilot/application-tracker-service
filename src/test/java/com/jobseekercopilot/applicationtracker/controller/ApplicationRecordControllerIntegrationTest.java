@@ -552,6 +552,66 @@ class ApplicationRecordControllerIntegrationTest {
     }
 
     @Test
+    void savedApplicationCreationEmitsOneContentFreeSavedEventOnReplay()
+            throws Exception {
+        String ownerId = "saved-owner";
+        CreateApplicationRequest request = CreateApplicationRequest.builder()
+                .userId(ownerId)
+                .jobId("saved-job-1")
+                .canonicalJobId("saved-job-1")
+                .provider("manual")
+                .externalJobId("saved-job-1")
+                .jobTitle("Support Engineer")
+                .companyName("Example Ltd")
+                .location("London")
+                .provenance(ApplicationProvenance.MANUAL)
+                .initialStatus(ApplicationStatus.SAVED)
+                .build();
+
+        String firstBody = mockMvc.perform(post("/api/v1/applications")
+                        .header(HttpHeaders.AUTHORIZATION, authorization(ownerId))
+                        .header(
+                                ApplicationRecordController.IDEMPOTENCY_KEY_HEADER,
+                                "saved-job-1-attempt")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("SAVED"))
+                .andExpect(jsonPath("$.appliedAt").doesNotExist())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String applicationId = objectMapper.readTree(firstBody).get("id").asText();
+
+        mockMvc.perform(post("/api/v1/applications")
+                        .header(HttpHeaders.AUTHORIZATION, authorization(ownerId))
+                        .header(
+                                ApplicationRecordController.IDEMPOTENCY_KEY_HEADER,
+                                "saved-job-1-attempt")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(applicationId));
+
+        mockMvc.perform(get(
+                                "/api/v1/applications/{id}/history",
+                                applicationId)
+                        .header(HttpHeaders.AUTHORIZATION, authorization(ownerId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.events", hasSize(1)))
+                .andExpect(jsonPath("$.events[0].eventType")
+                        .value("APPLICATION_SAVED"))
+                .andExpect(jsonPath("$.events[0].fromStatus").doesNotExist())
+                .andExpect(jsonPath("$.events[0].toStatus").value("SAVED"))
+                .andExpect(jsonPath("$.events[0].reason")
+                        .value("Application created with MANUAL provenance."));
+
+        assertThat(eventRepository.countByApplicationIdAndUserId(
+                        UUID.fromString(applicationId), ownerId))
+                .isEqualTo(1);
+    }
+
+    @Test
     void lifecycleCommandsExposeOrderedPaginatedOwnerScopedHistory()
             throws Exception {
         String ownerId = "history-owner";

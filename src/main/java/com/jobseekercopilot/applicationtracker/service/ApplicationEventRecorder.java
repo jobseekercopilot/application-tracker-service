@@ -24,7 +24,9 @@ public class ApplicationEventRecorder {
             ApplicationRecord record, ApplicationCommandActor actor) {
         return persist(
                 record,
-                ApplicationEventType.APPLICATION_CREATED,
+                record.getStatus() == ApplicationStatus.SAVED
+                        ? ApplicationEventType.APPLICATION_SAVED
+                        : ApplicationEventType.APPLICATION_CREATED,
                 null,
                 record.getStatus(),
                 toInstant(record.getCreatedAt()),
@@ -157,7 +159,8 @@ public class ApplicationEventRecorder {
             ApplicationCommandActor actor,
             String reason,
             long recordVersion) {
-        if (eventType != ApplicationEventType.APPLICATION_CREATED) {
+        if (eventType != ApplicationEventType.APPLICATION_CREATED
+                && eventType != ApplicationEventType.APPLICATION_SAVED) {
             repository
                     .findFirstByApplicationIdAndUserIdOrderByRecordVersionDescRecordedAtDesc(
                             record.getId(), record.getUserId())
