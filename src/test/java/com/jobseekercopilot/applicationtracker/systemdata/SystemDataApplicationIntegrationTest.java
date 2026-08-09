@@ -2,7 +2,9 @@ package com.jobseekercopilot.applicationtracker.systemdata;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jobseekercopilot.applicationtracker.dto.ApplicationRecordResponse;
+import com.jobseekercopilot.applicationtracker.dto.CreateApplicationRequest;
 import com.jobseekercopilot.applicationtracker.dto.UpdateStatusRequest;
+import com.jobseekercopilot.applicationtracker.entity.ApplicationProvenance;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationRecord;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationStatus;
 import com.jobseekercopilot.applicationtracker.entity.DocumentReferenceReconciliationStatus;
@@ -20,6 +22,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDateTime;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 
@@ -33,6 +36,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest(properties = {
         "environment-data.enabled=true",
+        "environment-data.isolated-database=true",
         "environment-data.allowed-environments=e2e"
 })
 @AutoConfigureMockMvc
@@ -207,6 +211,70 @@ class SystemDataApplicationIntegrationTest {
                                 ownerId)
                         .header(ApplicationServiceIdentityFilter.ENVIRONMENT_DATA_HEADER, TOKEN))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.recordsAffected").value(0));
+    }
+
+    @Test
+    void runtimeOwnerCleanupIsSyntheticBoundedCrossOwnerSafeAndRepeatable()
+            throws Exception {
+        String identityKey = "claimant-a";
+        UUID ownerId = syntheticOwner(SCENARIO_A, identityKey);
+        UUID otherOwnerId = syntheticOwner(SCENARIO_A, "claimant-b");
+        applicationRecordService.createApplication(
+                ownerId.toString(), manualSavedApplication(ownerId, "owner-job"));
+        applicationRecordService.createApplication(
+                otherOwnerId.toString(),
+                manualSavedApplication(otherOwnerId, "other-owner-job"));
+
+        String path = "/internal/system-data/v1/runtime-owners/{scenarioId}"
+                + "/identities/{identityKey}/owners/{userId}";
+        mockMvc.perform(get(path, SCENARIO_A, identityKey, ownerId)
+                        .header(
+                                ApplicationServiceIdentityFilter
+                                        .ENVIRONMENT_DATA_HEADER,
+                                TOKEN))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.details.applications").value(1))
+                .andExpect(jsonPath("$.details.reconciliations").value(1))
+                .andExpect(jsonPath("$.details.events").value(1));
+
+        mockMvc.perform(delete(
+                                path,
+                                SCENARIO_A,
+                                identityKey,
+                                UUID.randomUUID())
+                        .header(
+                                ApplicationServiceIdentityFilter
+                                        .ENVIRONMENT_DATA_HEADER,
+                                TOKEN))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(delete(path, SCENARIO_A, identityKey, ownerId)
+                        .header(
+                                ApplicationServiceIdentityFilter
+                                        .ENVIRONMENT_DATA_HEADER,
+                                TOKEN))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.details.applications").value(1))
+                .andExpect(jsonPath("$.details.reconciliations").value(1))
+                .andExpect(jsonPath("$.details.events").value(1));
+
+        assertEquals(0, repository.findByUserId(ownerId.toString()).size());
+        assertEquals(1, repository.findByUserId(otherOwnerId.toString()).size());
+
+        mockMvc.perform(delete(path, SCENARIO_A, identityKey, ownerId)
+                        .header(
+                                ApplicationServiceIdentityFilter
+                                        .ENVIRONMENT_DATA_HEADER,
+                                TOKEN))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.details.applications").value(0))
+                .andExpect(jsonPath("$.details.commands").value(0))
+                .andExpect(jsonPath("$.details.workflows").value(0))
+                .andExpect(jsonPath("$.details.reconciliations").value(0))
+                .andExpect(jsonPath("$.details.events").value(0))
+                .andExpect(jsonPath(
+                        "$.details.documentAvailabilityProjections").value(0))
                 .andExpect(jsonPath("$.recordsAffected").value(0));
     }
 
@@ -432,5 +500,28 @@ class SystemDataApplicationIntegrationTest {
                 .coverLetterDocumentId(UUID.randomUUID().toString())
                 .status(ApplicationStatus.DOCUMENTS_GENERATED)
                 .build();
+    }
+
+    private CreateApplicationRequest manualSavedApplication(
+            UUID ownerId, String jobId) {
+        return CreateApplicationRequest.builder()
+                .userId(ownerId.toString())
+                .jobId(jobId)
+                .canonicalJobId(jobId)
+                .provider("MANUAL")
+                .externalJobId(jobId)
+                .jobTitle("Saved role")
+                .companyName("Example Ltd")
+                .provenance(ApplicationProvenance.MANUAL)
+                .initialStatus(ApplicationStatus.SAVED)
+                .build();
+    }
+
+    private UUID syntheticOwner(String scenarioId, String identityKey) {
+        return UUID.nameUUIDFromBytes(("job-seeker-copilot:system-data:"
+                + scenarioId
+                + ":"
+                + identityKey
+                + ":user").getBytes(StandardCharsets.UTF_8));
     }
 }

@@ -28,12 +28,15 @@ import java.util.UUID;
 public class ApplicationTrackerSystemDataController {
     private final EnvironmentDataGuard guard;
     private final SystemDataApplicationService systemDataService;
+    private final OwnerRuntimeApplicationService ownerRuntimeService;
 
     public ApplicationTrackerSystemDataController(
             EnvironmentDataGuard guard,
-            SystemDataApplicationService systemDataService) {
+            SystemDataApplicationService systemDataService,
+            OwnerRuntimeApplicationService ownerRuntimeService) {
         this.guard = guard;
         this.systemDataService = systemDataService;
+        this.ownerRuntimeService = ownerRuntimeService;
     }
 
     @PostMapping(
@@ -85,5 +88,45 @@ public class ApplicationTrackerSystemDataController {
                         "scenarioId", scenarioId,
                         "applications", summary.count(),
                         "byStatus", summary.byStatus())));
+    }
+
+    @DeleteMapping(
+            "/v1/runtime-owners/{scenarioId}/identities/{identityKey}/owners/{userId}")
+    public ResponseEntity<SystemDataResult> resetRuntimeOwner(
+            @PathVariable
+            @Pattern(regexp = "[a-z0-9][a-z0-9-]{1,54}-v[1-9][0-9]{0,6}")
+            String scenarioId,
+            @PathVariable
+            @Pattern(regexp = "[a-z0-9][a-z0-9-]{0,54}")
+            String identityKey,
+            @PathVariable UUID userId) {
+        guard.requireRuntimeOwnerCleanup();
+        SyntheticOwnerId.requireMatches(scenarioId, identityKey, userId);
+        OwnerRuntimeApplicationSummary summary = ownerRuntimeService.reset(userId);
+        return ResponseEntity.ok(SystemDataResult.success(
+                "RESET_RUNTIME_OWNER",
+                summary.total(),
+                guard.activeEnvironment(),
+                summary.details(scenarioId, identityKey)));
+    }
+
+    @GetMapping(
+            "/v1/runtime-owners/{scenarioId}/identities/{identityKey}/owners/{userId}")
+    public ResponseEntity<SystemDataResult> verifyRuntimeOwner(
+            @PathVariable
+            @Pattern(regexp = "[a-z0-9][a-z0-9-]{1,54}-v[1-9][0-9]{0,6}")
+            String scenarioId,
+            @PathVariable
+            @Pattern(regexp = "[a-z0-9][a-z0-9-]{0,54}")
+            String identityKey,
+            @PathVariable UUID userId) {
+        guard.requireRuntimeOwnerCleanup();
+        SyntheticOwnerId.requireMatches(scenarioId, identityKey, userId);
+        OwnerRuntimeApplicationSummary summary = ownerRuntimeService.verify(userId);
+        return ResponseEntity.ok(SystemDataResult.success(
+                "VERIFY_RUNTIME_OWNER",
+                summary.total(),
+                guard.activeEnvironment(),
+                summary.details(scenarioId, identityKey)));
     }
 }
