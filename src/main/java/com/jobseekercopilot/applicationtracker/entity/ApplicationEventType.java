@@ -3,6 +3,7 @@ package com.jobseekercopilot.applicationtracker.entity;
 public enum ApplicationEventType {
     LEGACY_SNAPSHOT,
     APPLICATION_CREATED,
+    APPLICATION_SAVED,
     STATUS_CHANGED,
     DOCUMENT_REFERENCE_CHANGED,
     DOCUMENT_REFERENCES_RECONCILED,

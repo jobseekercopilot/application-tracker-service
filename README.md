@@ -54,7 +54,7 @@ verification before building the image. The Docker build compiles the test
 sources but does not execute the PostgreSQL Testcontainers suite because a
 standard image build must not receive the host Docker socket.
 
-The version `4.6.0` contract retains the owner-scoped public list and lifecycle
+The version `4.7.0` contract retains the owner-scoped public list and lifecycle
 concurrency contracts while replacing the unsafe raw-entity System Data routes
 with a constrained, versioned, owner-and-scenario-scoped fixture boundary and
 adds backward-compatible activity-history, recoverable generated-withdrawal
@@ -76,6 +76,11 @@ Version `4.6.0` adds content-free activity types for the first explicit
 application document choice, later changed choices, and the existing exact
 apply-time freeze. Retry replays and later commands that preserve both choices
 do not add duplicate activity.
+
+Version `4.7.0` records a newly created `SAVED` application as the explicit,
+content-free `APPLICATION_SAVED` activity. Other creation modes retain
+`APPLICATION_CREATED`, and idempotent creation replay does not duplicate either
+event.
 
 Version `4.1.0` adds the authoritative `SAVED` lifecycle state. Existing
 manual/external requests still default to `APPLIED`; callers opt into `SAVED`

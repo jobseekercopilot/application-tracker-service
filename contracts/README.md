@@ -34,7 +34,7 @@ The OpenAPI `info.version` follows semantic versioning:
 - major: removed or renamed operations/fields, narrowed values, changed
   authentication, or any other consumer-breaking change.
 
-The contract is version `4.2.0`. It retains the explicitly defined owner-scoped
+The contract is version `4.7.0`. It retains the explicitly defined owner-scoped
 list boundary and lifecycle concurrency metadata from `2.1.0`, and replaces
 raw-entity, owner-wide System Data operations with a constrained versioned seed
 request and scenario-scoped seed/reset/verify operations. The minor version
@@ -62,6 +62,10 @@ during a rolling deployment cannot accidentally clear an absent field. The
 command requires `expectedVersion` and `Idempotency-Key`, returns the
 authoritative record on stale conflict, and keeps the legacy one-slot endpoint
 available as a deprecated compatibility bridge.
+
+Version `4.7.0` adds the content-free `APPLICATION_SAVED` event value and uses
+it only when a creation command establishes the truthful pre-application
+`SAVED` state. Existing creation events and replay semantics remain compatible.
 
 The owner-scoped list operation explicitly defines its service-token/Bearer
 alternatives, success model, stable `401`, `403` and `404` error models, and

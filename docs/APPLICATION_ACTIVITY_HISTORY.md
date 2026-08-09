@@ -1,10 +1,10 @@
 # Application activity history
 
 Application Tracker is the authoritative source for current application state
-and its immutable activity chronology. Accepted creation, status,
-document-reference, APPLIED freeze, generated-withdrawal, document-reference
-reconciliation and deletion commands append events in the same transaction as the
-current-record mutation.
+and its immutable activity chronology. Accepted creation, explicit
+saved-application, status, document-reference, APPLIED freeze,
+generated-withdrawal, document-reference reconciliation and deletion commands
+append events in the same transaction as the current-record mutation.
 
 Retries do not invent activity:
 

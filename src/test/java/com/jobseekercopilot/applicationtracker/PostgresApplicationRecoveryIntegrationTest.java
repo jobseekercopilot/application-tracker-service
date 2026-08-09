@@ -51,7 +51,7 @@ class PostgresApplicationRecoveryIntegrationTest {
                         assertThat(((SQLException) error).getSQLState()).startsWith("28"));
 
         Flyway upgraded = flyway(POSTGRES.getJdbcUrl());
-        assertThat(upgraded.migrate().migrationsExecuted).isEqualTo(16);
+        assertThat(upgraded.migrate().migrationsExecuted).isEqualTo(17);
         upgraded.validate();
 
         try (Connection connection = primaryConnection()) {
