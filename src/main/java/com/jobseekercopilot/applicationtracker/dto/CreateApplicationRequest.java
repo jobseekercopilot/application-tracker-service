@@ -40,6 +40,30 @@ public class CreateApplicationRequest {
     @Size(max = 255, message = "externalJobId must be at most 255 characters")
     private String externalJobId;
 
+    @Schema(description = "Authoritative provider listing URL", example = "https://www.jobs.nhs.uk/candidate/jobadvert/C123")
+    @Size(max = 2048, message = "listingUrl must be at most 2048 characters")
+    private String listingUrl;
+
+    @Schema(description = "Official provider application URL when distinct from the listing URL")
+    @Size(max = 2048, message = "applyUrl must be at most 2048 characters")
+    private String applyUrl;
+
+    @Schema(description = "Provider attribution text", example = "Vacancy source: NHS Jobs")
+    @Size(max = 255, message = "attributionLabel must be at most 255 characters")
+    private String attributionLabel;
+
+    @Schema(description = "Authoritative provider attribution URL", example = "https://www.jobs.nhs.uk/")
+    @Size(max = 2048, message = "attributionSourceUrl must be at most 2048 characters")
+    private String attributionSourceUrl;
+
+    @Schema(description = "Licence URL governing the provider data")
+    @Size(max = 2048, message = "licenceUrl must be at most 2048 characters")
+    private String licenceUrl;
+
+    @Schema(description = "Required provider no-endorsement statement")
+    @Size(max = 1000, message = "disclaimer must be at most 1000 characters")
+    private String disclaimer;
+
     @NotBlank(message = "jobTitle is required")
     @Size(max = 300, message = "jobTitle must be at most 300 characters")
     @Schema(description = "Title of the job", example = "Java Developer", requiredMode = Schema.RequiredMode.REQUIRED)

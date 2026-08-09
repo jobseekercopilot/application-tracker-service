@@ -554,32 +554,12 @@
           "required" : true
         },
         "responses" : {
-          "403" : {
-            "description" : "Authenticated identity is not permitted to perform the requested transition",
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/SecurityErrorResponse"
-                }
-              }
-            }
-          },
           "401" : {
             "description" : "Missing or invalid authentication",
             "content" : {
               "application/json" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/SecurityErrorResponse"
-                }
-              }
-            }
-          },
-          "404" : {
-            "description" : "Application record not found",
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -610,6 +590,26 @@
               "application/json" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/ApplicationRecordResponse"
+                }
+              }
+            }
+          },
+          "403" : {
+            "description" : "Authenticated identity is not permitted to perform the requested transition",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SecurityErrorResponse"
+                }
+              }
+            }
+          },
+          "404" : {
+            "description" : "Application record not found",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1172,22 +1172,22 @@
           }
         } ],
         "responses" : {
-          "404" : {
-            "description" : "Application record not found",
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
           "200" : {
             "description" : "Ordered activity page returned",
             "content" : {
               "application/json" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/ApplicationHistoryResponse"
+                }
+              }
+            }
+          },
+          "404" : {
+            "description" : "Application record not found",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1316,6 +1316,26 @@
           }
         } ],
         "responses" : {
+          "404" : {
+            "description" : "Bearer subject and requested owner do not match",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403" : {
+            "description" : "Authenticated identity lacks reader permission",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SecurityErrorResponse"
+                }
+              }
+            }
+          },
           "200" : {
             "description" : "Owner-scoped application records",
             "content" : {
@@ -1335,26 +1355,6 @@
               "application/json" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/SecurityErrorResponse"
-                }
-              }
-            }
-          },
-          "403" : {
-            "description" : "Authenticated identity lacks reader permission",
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/SecurityErrorResponse"
-                }
-              }
-            }
-          },
-          "404" : {
-            "description" : "Bearer subject and requested owner do not match",
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1597,6 +1597,30 @@
             "type" : "string",
             "description" : "Provider-specific job identifier",
             "example" : "123456"
+          },
+          "listingUrl" : {
+            "type" : "string",
+            "description" : "Authoritative provider listing URL"
+          },
+          "applyUrl" : {
+            "type" : "string",
+            "description" : "Official provider application URL when distinct from the listing URL"
+          },
+          "attributionLabel" : {
+            "type" : "string",
+            "description" : "Provider attribution text"
+          },
+          "attributionSourceUrl" : {
+            "type" : "string",
+            "description" : "Authoritative provider attribution URL"
+          },
+          "licenceUrl" : {
+            "type" : "string",
+            "description" : "Licence URL governing the provider data"
+          },
+          "disclaimer" : {
+            "type" : "string",
+            "description" : "Required provider no-endorsement statement"
           },
           "provenance" : {
             "type" : "string",
@@ -2099,6 +2123,45 @@
             "type" : "string",
             "description" : "Provider-specific job identifier",
             "example" : "123456"
+          },
+          "listingUrl" : {
+            "maxLength" : 2048,
+            "minLength" : 0,
+            "type" : "string",
+            "description" : "Authoritative provider listing URL",
+            "example" : "https://www.jobs.nhs.uk/candidate/jobadvert/C123"
+          },
+          "applyUrl" : {
+            "maxLength" : 2048,
+            "minLength" : 0,
+            "type" : "string",
+            "description" : "Official provider application URL when distinct from the listing URL"
+          },
+          "attributionLabel" : {
+            "maxLength" : 255,
+            "minLength" : 0,
+            "type" : "string",
+            "description" : "Provider attribution text",
+            "example" : "Vacancy source: NHS Jobs"
+          },
+          "attributionSourceUrl" : {
+            "maxLength" : 2048,
+            "minLength" : 0,
+            "type" : "string",
+            "description" : "Authoritative provider attribution URL",
+            "example" : "https://www.jobs.nhs.uk/"
+          },
+          "licenceUrl" : {
+            "maxLength" : 2048,
+            "minLength" : 0,
+            "type" : "string",
+            "description" : "Licence URL governing the provider data"
+          },
+          "disclaimer" : {
+            "maxLength" : 1000,
+            "minLength" : 0,
+            "type" : "string",
+            "description" : "Required provider no-endorsement statement"
           },
           "jobTitle" : {
             "maxLength" : 300,

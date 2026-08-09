@@ -49,6 +49,7 @@ class ApplicationCreationServiceTest {
         service = new ApplicationCreationService(
                 transaction,
                 documentReferenceVerifier,
+                new AuthoritativeJobSourcePolicy("LIVE"),
                 Clock.fixed(Instant.parse("2026-08-09T12:00:00Z"), ZoneOffset.UTC));
     }
 

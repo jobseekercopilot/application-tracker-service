@@ -55,6 +55,24 @@ public class ApplicationRecordResponse {
             requiredMode = Schema.RequiredMode.REQUIRED)
     private String externalJobId;
 
+    @Schema(description = "Authoritative provider listing URL")
+    private String listingUrl;
+
+    @Schema(description = "Official provider application URL when distinct from the listing URL")
+    private String applyUrl;
+
+    @Schema(description = "Provider attribution text")
+    private String attributionLabel;
+
+    @Schema(description = "Authoritative provider attribution URL")
+    private String attributionSourceUrl;
+
+    @Schema(description = "Licence URL governing the provider data")
+    private String licenceUrl;
+
+    @Schema(description = "Required provider no-endorsement statement")
+    private String disclaimer;
+
     @Schema(
             description = "How the application entered the tracker",
             example = "MANUAL",
