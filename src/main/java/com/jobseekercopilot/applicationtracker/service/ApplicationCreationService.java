@@ -12,8 +12,8 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.time.LocalDateTime;
 import java.time.Clock;
+import java.time.LocalDateTime;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
@@ -39,6 +39,7 @@ public class ApplicationCreationService {
 
     private final ApplicationCreationTransaction transaction;
     private final DocumentReferenceVerifier documentReferenceVerifier;
+    private final AuthoritativeJobSourcePolicy authoritativeJobSourcePolicy;
     private final Clock clock;
 
     public ApplicationCreationOutcome createApplication(
@@ -128,6 +129,16 @@ public class ApplicationCreationService {
         String externalJobId = normalizeId(
                 firstNonBlank(request.getExternalJobId(), jobId),
                 "externalJobId");
+        AuthoritativeJobSourcePolicy.SourceMetadata source =
+                authoritativeJobSourcePolicy.normalize(
+                        provider,
+                        externalJobId,
+                        request.getListingUrl(),
+                        request.getApplyUrl(),
+                        request.getAttributionLabel(),
+                        request.getAttributionSourceUrl(),
+                        request.getLicenceUrl(),
+                        request.getDisclaimer());
 
         return new NormalizedCommand(
                 normalizeRequired(ownerId, "ownerId", 255),
@@ -135,6 +146,12 @@ public class ApplicationCreationService {
                 canonicalJobId,
                 provider,
                 externalJobId,
+                source.listingUrl(),
+                source.applyUrl(),
+                source.attributionLabel(),
+                source.attributionSourceUrl(),
+                source.licenceUrl(),
+                source.disclaimer(),
                 normalizeRequired(request.getJobTitle(), "jobTitle", 300),
                 normalizeRequired(request.getCompanyName(), "companyName", 300),
                 normalizeOptional(request.getLocation(), "location", 300),
@@ -203,6 +220,12 @@ public class ApplicationCreationService {
                 .provider(command.provider())
                 .externalJobId(command.externalJobId())
                 .provenance(command.provenance())
+                .listingUrl(command.listingUrl())
+                .applyUrl(command.applyUrl())
+                .attributionLabel(command.attributionLabel())
+                .attributionSourceUrl(command.attributionSourceUrl())
+                .licenceUrl(command.licenceUrl())
+                .disclaimer(command.disclaimer())
                 .idempotencyKey(idempotencyKey)
                 .createRequestFingerprint(fingerprint)
                 .jobTitle(command.jobTitle())
@@ -383,6 +406,12 @@ public class ApplicationCreationService {
                     command.externalJobId(),
                     command.jobTitle(),
                     command.companyName(),
+                    nullToEmpty(command.listingUrl()),
+                    nullToEmpty(command.applyUrl()),
+                    nullToEmpty(command.attributionLabel()),
+                    nullToEmpty(command.attributionSourceUrl()),
+                    nullToEmpty(command.licenceUrl()),
+                    nullToEmpty(command.disclaimer()),
                     nullToEmpty(command.location()),
                     command.provenance().name(),
                     command.status().name(),
@@ -414,6 +443,12 @@ public class ApplicationCreationService {
             String canonicalJobId,
             String provider,
             String externalJobId,
+            String listingUrl,
+            String applyUrl,
+            String attributionLabel,
+            String attributionSourceUrl,
+            String licenceUrl,
+            String disclaimer,
             String jobTitle,
             String companyName,
             String location,

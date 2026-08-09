@@ -47,6 +47,10 @@ reconciliation status operation. Those additions are backward compatible:
 existing fields remain, while `202`,
 operation identity, retry state, recovery code and explicit reconciliation
 health make partial or inconsistent cross-service work visible.
+Version `3.5.0` adds backward-compatible authoritative listing, application and
+attribution metadata to application create and read models. NHS source metadata
+is validated against either the official live vacancy origin and path or the
+isolated fixture origin selected by configuration.
 
 Version `4.0.0` replaces the obsolete evidence-section values with the
 canonical User Profile and Document Store taxonomy. That enum replacement is

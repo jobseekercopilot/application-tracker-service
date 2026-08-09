@@ -74,7 +74,10 @@ and durable document-replacement and document-reference reconciliation
 operations. A withdrawal or replacement
 returns a durable operation ID and either a completed `200` or recovery-pending
 `202`; it never reports success after only part of a cross-service workflow. It
-also publishes owner-scoped reconciliation state, safely repairs missing
+also preserves validated authoritative listing, application and attribution
+metadata with each tracked job. NHS fixture URLs are accepted only in the
+explicit fixture source mode; live mode accepts only the official vacancy path.
+It also publishes owner-scoped reconciliation state, safely repairs missing
 immutable reference metadata, and blocks lifecycle progression when references
 are unverified. Current and application-used references now include immutable
 profile, evidence-snapshot, claim-ledger and grounding provenance. It continues
