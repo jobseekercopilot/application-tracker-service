@@ -63,6 +63,16 @@ public class HttpDocumentReferenceVerifier implements DocumentReferenceVerifier 
             UUID documentId,
             String expectedJobId,
             DocumentType expectedType) {
+        return verify(ownerId, documentId, expectedJobId, null, expectedType);
+    }
+
+    @Override
+    public DocumentVersionReference verify(
+            String ownerId,
+            UUID documentId,
+            String expectedJobId,
+            UUID expectedApplicationId,
+            DocumentType expectedType) {
         if (!StringUtils.hasText(documentStoreBaseUrl)
                 || !StringUtils.hasText(readerToken)) {
             throw new DocumentReferenceUnavailableException();
@@ -80,7 +90,12 @@ public class HttpDocumentReferenceVerifier implements DocumentReferenceVerifier 
                             DocumentStoreReferenceResponse.class,
                             documentId);
             DocumentStoreReferenceResponse reference = response.getBody();
-            if (!eligible(reference, documentId, expectedJobId, expectedType)) {
+            if (!eligible(
+                    reference,
+                    documentId,
+                    expectedJobId,
+                    expectedApplicationId,
+                    expectedType)) {
                 throw new InvalidDocumentReferenceException();
             }
             return DocumentVersionReference.builder()
@@ -109,18 +124,35 @@ public class HttpDocumentReferenceVerifier implements DocumentReferenceVerifier 
             DocumentStoreReferenceResponse reference,
             UUID documentId,
             String expectedJobId,
+            UUID expectedApplicationId,
             DocumentType expectedType) {
         return reference != null
                 && documentId.equals(reference.getDocumentId())
                 && reference.getDocumentFamilyId() != null
                 && expectedJobId.equals(reference.getJobId())
+                && (expectedApplicationId == null
+                        || expectedApplicationId.toString().equals(
+                                reference.getApplicationId()))
                 && expectedType == reference.getDocumentType()
                 && reference.getVersion() != null
                 && reference.getVersion() >= 1
                 && reference.getContentSha256() != null
                 && SHA_256.matcher(reference.getContentSha256()).matches()
                 && "APPROVED".equals(reference.getLifecycleState())
+                && validSource(reference, expectedApplicationId)
                 && validProvenance(reference);
+    }
+
+    private boolean validSource(
+            DocumentStoreReferenceResponse reference,
+            UUID expectedApplicationId) {
+        if ("GENERATED".equals(reference.getSourceType())) {
+            return true;
+        }
+        return "UPLOADED".equals(reference.getSourceType())
+                && expectedApplicationId != null
+                && reference.getOriginalContentSha256() != null
+                && SHA_256.matcher(reference.getOriginalContentSha256()).matches();
     }
 
     private boolean validProvenance(
@@ -166,9 +198,12 @@ public class HttpDocumentReferenceVerifier implements DocumentReferenceVerifier 
         private UUID documentId;
         private UUID documentFamilyId;
         private String jobId;
+        private String applicationId;
         private DocumentType documentType;
         private Integer version;
         private String contentSha256;
+        private String originalContentSha256;
+        private String sourceType;
         private String lifecycleState;
         private DocumentEvidenceProvenance evidenceProvenance;
         private DocumentGroundingState groundingState;

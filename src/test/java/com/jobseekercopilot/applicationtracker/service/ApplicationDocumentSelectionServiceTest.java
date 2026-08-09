@@ -74,7 +74,11 @@ class ApplicationDocumentSelectionServiceTest {
                         "owner-123", applicationId, 4))
                 .thenReturn(snapshot);
         when(verifier.verify(
-                        "owner-123", cvId, "canonical-job", DocumentType.CV))
+                        "owner-123",
+                        cvId,
+                        "canonical-job",
+                        applicationId,
+                        DocumentType.CV))
                 .thenReturn(reference);
         when(transaction.apply(
                         anyString(),
@@ -96,11 +100,16 @@ class ApplicationDocumentSelectionServiceTest {
                 .isSameAs(expected);
 
         verify(verifier).verify(
-                "owner-123", cvId, "canonical-job", DocumentType.CV);
+                "owner-123",
+                cvId,
+                "canonical-job",
+                applicationId,
+                DocumentType.CV);
         verify(verifier, never()).verify(
                 anyString(),
                 any(UUID.class),
                 anyString(),
+                any(UUID.class),
                 org.mockito.ArgumentMatchers.eq(DocumentType.COVER_LETTER));
     }
 
@@ -124,7 +133,7 @@ class ApplicationDocumentSelectionServiceTest {
                 .isSameAs(original);
 
         verify(verifier, never()).verify(
-                anyString(), any(), anyString(), any());
+                anyString(), any(), anyString(), any(), any());
         verify(transaction, never()).apply(
                 anyString(), any(), anyString(), anyString(), anyLong(),
                 any(), any(), any());
@@ -144,7 +153,7 @@ class ApplicationDocumentSelectionServiceTest {
         verify(transaction, never()).findReplay(
                 anyString(), any(), anyString(), anyString());
         verify(verifier, never()).verify(
-                anyString(), any(), anyString(), any());
+                anyString(), any(), anyString(), any(), any());
     }
 
     private SaveDocumentSelectionsRequest request(UUID cvId, long version) {

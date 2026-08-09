@@ -24,6 +24,8 @@ class HttpDocumentReferenceVerifierTest {
             UUID.fromString("11111111-1111-4111-8111-111111111111");
     private static final UUID FAMILY_ID =
             UUID.fromString("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+    private static final UUID APPLICATION_ID =
+            UUID.fromString("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
 
     @Test
     void canonicalApprovedReferenceIsOwnerScopedAndMappedWithoutContent() {
@@ -109,6 +111,56 @@ class HttpDocumentReferenceVerifierTest {
                 .hasMessage("Document reference validation is temporarily unavailable.");
     }
 
+    @Test
+    void uploadedReferenceRequiresExactApplicationAndBothHashes() {
+        RestTemplate restTemplate = new RestTemplate();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
+        HttpDocumentReferenceVerifier verifier = new HttpDocumentReferenceVerifier(
+                restTemplate, "http://document-store", "reader-secret");
+        server.expect(once(), requestTo(
+                        "http://document-store/api/v1/documents/"
+                                + DOCUMENT_ID
+                                + "/reference"))
+                .andRespond(withSuccess(
+                        uploadedReferenceJson(APPLICATION_ID, "f".repeat(64)),
+                        MediaType.APPLICATION_JSON));
+
+        var reference = verifier.verify(
+                "owner-123",
+                DOCUMENT_ID,
+                "job-456",
+                APPLICATION_ID,
+                DocumentType.CV);
+
+        assertThat(reference.getDocumentId()).isEqualTo(DOCUMENT_ID);
+        assertThat(reference.getContentSha256()).isEqualTo("a".repeat(64));
+        server.verify();
+    }
+
+    @Test
+    void uploadedReferenceRejectsWrongApplicationOrMissingOriginalHash() {
+        RestTemplate restTemplate = new RestTemplate();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
+        HttpDocumentReferenceVerifier verifier = new HttpDocumentReferenceVerifier(
+                restTemplate, "http://document-store", "reader-secret");
+        server.expect(once(), requestTo(
+                        "http://document-store/api/v1/documents/"
+                                + DOCUMENT_ID
+                                + "/reference"))
+                .andRespond(withSuccess(
+                        uploadedReferenceJson(UUID.randomUUID(), null),
+                        MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> verifier.verify(
+                        "owner-123",
+                        DOCUMENT_ID,
+                        "job-456",
+                        APPLICATION_ID,
+                        DocumentType.CV))
+                .isInstanceOf(InvalidDocumentReferenceException.class);
+        server.verify();
+    }
+
     private String referenceJson(String documentType, String lifecycleState) {
         return """
                 {
@@ -118,6 +170,7 @@ class HttpDocumentReferenceVerifierTest {
                   "documentType": "%s",
                   "version": 3,
                   "contentSha256": "%s",
+                  "sourceType": "GENERATED",
                   "lifecycleState": "%s",
                   "groundingState": "AI_GENERATED_EVIDENCE_VALIDATED",
                   "evidenceProvenance": {
@@ -159,5 +212,31 @@ class HttpDocumentReferenceVerifierTest {
                 "c".repeat(64),
                 "d".repeat(64),
                 "e".repeat(64));
+    }
+
+    private String uploadedReferenceJson(
+            UUID applicationId, String originalContentSha256) {
+        String originalHash = originalContentSha256 == null
+                ? "null"
+                : "\"" + originalContentSha256 + "\"";
+        return """
+                {
+                  "documentId": "%s",
+                  "documentFamilyId": "%s",
+                  "jobId": "job-456",
+                  "applicationId": "%s",
+                  "documentType": "CV",
+                  "version": 1,
+                  "contentSha256": "%s",
+                  "originalContentSha256": %s,
+                  "sourceType": "UPLOADED",
+                  "lifecycleState": "APPROVED"
+                }
+                """.formatted(
+                DOCUMENT_ID,
+                FAMILY_ID,
+                applicationId,
+                "a".repeat(64),
+                originalHash);
     }
 }

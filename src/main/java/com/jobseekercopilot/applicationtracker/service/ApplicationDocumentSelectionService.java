@@ -50,11 +50,13 @@ public class ApplicationDocumentSelectionService {
                 ownerId,
                 request.getCvSelection(),
                 selectionJobId(snapshot),
+                applicationId,
                 DocumentType.CV);
         DocumentVersionReference coverLetter = verify(
                 ownerId,
                 request.getCoverLetterSelection(),
                 selectionJobId(snapshot),
+                applicationId,
                 DocumentType.COVER_LETTER);
 
         try {
@@ -77,6 +79,7 @@ public class ApplicationDocumentSelectionService {
             String ownerId,
             DocumentSelectionCommand selection,
             String expectedJobId,
+            UUID expectedApplicationId,
             DocumentType expectedType) {
         if (selection.getState() == DocumentSelectionState.OMITTED) {
             return null;
@@ -85,6 +88,7 @@ public class ApplicationDocumentSelectionService {
                 ownerId,
                 selection.getDocumentId(),
                 expectedJobId,
+                expectedApplicationId,
                 expectedType);
     }
 
