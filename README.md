@@ -1,5 +1,17 @@
 # Application Tracker Service
 
+## Role in Job Seeker Copilot
+
+| Role | Called by | Calls | Data | Local port |
+|---|---|---|---|---:|
+| System of record for applications, lifecycle, immutable events and exact document references | Job Finder, Document Generation, Reporting and lifecycle coordinators | Document Store for recoverable document workflows | Own PostgreSQL database | 8088 |
+
+See the central [application journey](https://docs.jobseekercopilot.com/journeys/applications/), [document journey](https://docs.jobseekercopilot.com/journeys/documents/), and [data ownership](https://docs.jobseekercopilot.com/data/ownership/).
+
+Uploaded selections are accepted only after Document Store confirms the exact
+approved immutable version belongs to the same owner, job, application, and
+document type; Application Tracker commits the selection atomically.
+
 Spring Boot service for the inherited Job Seeker Copilot application-record,
 status and generated-document reference model.
 
