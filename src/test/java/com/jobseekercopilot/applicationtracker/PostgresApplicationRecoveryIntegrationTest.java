@@ -349,7 +349,7 @@ class PostgresApplicationRecoveryIntegrationTest {
                     to_status, actor_type, actor_id, source, occurred_at,
                     recorded_at, record_version
                 ) VALUES (
-                    ?, ?, 'saved-owner', 'APPLICATION_CREATED', NULL,
+                    ?, ?, 'saved-owner', 'APPLICATION_SAVED', NULL,
                     'SAVED', 'USER', 'saved-owner', 'USER',
                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0
                 )
