@@ -10,4 +10,13 @@ public interface DocumentReferenceVerifier {
             UUID documentId,
             String expectedJobId,
             DocumentType expectedType);
+
+    default DocumentVersionReference verify(
+            String ownerId,
+            UUID documentId,
+            String expectedJobId,
+            UUID expectedApplicationId,
+            DocumentType expectedType) {
+        return verify(ownerId, documentId, expectedJobId, expectedType);
+    }
 }

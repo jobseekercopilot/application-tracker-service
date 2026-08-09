@@ -138,6 +138,28 @@ class PostgresJpaSchemaIntegrationTest {
                                             : "b".repeat(64))
                             .build();
                 });
+        when(documentReferenceVerifier.verify(
+                        anyString(),
+                        any(UUID.class),
+                        anyString(),
+                        any(UUID.class),
+                        any(DocumentType.class)))
+                .thenAnswer(invocation -> {
+                    UUID id = invocation.getArgument(1);
+                    String jobId = invocation.getArgument(2);
+                    DocumentType type = invocation.getArgument(4);
+                    return DocumentVersionReference.builder()
+                            .documentId(id)
+                            .documentFamilyId(id)
+                            .jobId(jobId)
+                            .documentType(type)
+                            .version(1)
+                            .contentSha256(
+                                    type == DocumentType.CV
+                                            ? "a".repeat(64)
+                                            : "b".repeat(64))
+                            .build();
+                });
     }
 
     @Test

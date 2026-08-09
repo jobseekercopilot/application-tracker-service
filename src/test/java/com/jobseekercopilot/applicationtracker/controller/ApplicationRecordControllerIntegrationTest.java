@@ -143,6 +143,16 @@ class ApplicationRecordControllerIntegrationTest {
                         invocation.getArgument(1),
                         invocation.getArgument(2),
                         invocation.getArgument(3)));
+        when(documentReferenceVerifier.verify(
+                        anyString(),
+                        any(UUID.class),
+                        anyString(),
+                        any(UUID.class),
+                        any(DocumentType.class)))
+                .thenAnswer(invocation -> reference(
+                        invocation.getArgument(1),
+                        invocation.getArgument(2),
+                        invocation.getArgument(4)));
     }
 
     @Test
@@ -414,6 +424,7 @@ class ApplicationRecordControllerIntegrationTest {
                         "secure-owner",
                         rejectedDocument,
                         "selection-job",
+                        application.getId(),
                         DocumentType.CV))
                 .thenThrow(new InvalidDocumentReferenceException());
 
