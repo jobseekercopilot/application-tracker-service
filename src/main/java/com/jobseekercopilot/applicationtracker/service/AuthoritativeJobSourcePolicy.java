@@ -57,6 +57,9 @@ public class AuthoritativeJobSourcePolicy {
         String normalizedApply = StringUtils.hasText(applyUrl)
                 ? requireApprovedVacancyUrl(applyUrl, externalJobId, "applyUrl")
                 : null;
+        if (normalizedApply != null && !normalizedListing.equals(normalizedApply)) {
+            throw invalidUrl("applyUrl");
+        }
         requireExact(attributionLabel, NHS_ATTRIBUTION_LABEL, "attributionLabel");
         requireExact(
                 attributionSourceUrl, NHS_ATTRIBUTION_URL, "attributionSourceUrl");
@@ -84,17 +87,20 @@ public class AuthoritativeJobSourcePolicy {
         } catch (URISyntaxException exception) {
             throw invalidUrl(field);
         }
-        String expectedHost = nhsJobsMode == NhsJobsMode.LIVE
-                ? "www.jobs.nhs.uk"
-                : "fixtures.jobseekercopilot.test";
-        String expectedPath = nhsJobsMode == NhsJobsMode.LIVE
-                ? "/candidate/jobadvert/" + externalJobId
-                : "/nhs-jobs/jobadvert/" + externalJobId;
+        boolean approvedHost = nhsJobsMode == NhsJobsMode.LIVE
+                ? "www.jobs.nhs.uk".equalsIgnoreCase(uri.getHost())
+                        || "beta.jobs.nhs.uk".equalsIgnoreCase(uri.getHost())
+                : "fixtures.jobseekercopilot.test".equalsIgnoreCase(uri.getHost());
+        String rawPath = uri.getRawPath();
+        boolean approvedPath = nhsJobsMode == NhsJobsMode.LIVE
+                ? rawPath != null
+                        && rawPath.matches("/candidate/jobadvert/[A-Za-z0-9-]{1,255}")
+                : ("/nhs-jobs/jobadvert/" + externalJobId).equals(rawPath);
         boolean approved = "https".equalsIgnoreCase(uri.getScheme())
-                && expectedHost.equalsIgnoreCase(uri.getHost())
+                && approvedHost
                 && uri.getPort() == -1
                 && uri.getUserInfo() == null
-                && expectedPath.equals(uri.getPath())
+                && approvedPath
                 && uri.getRawQuery() == null
                 && uri.getRawFragment() == null;
         if (!approved) {
