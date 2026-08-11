@@ -39,7 +39,27 @@ class AuthoritativeJobSourcePolicyTest {
     }
 
     @Test
-    void liveModeRejectsFixtureUrlsAndMismatchedVacancyIdentity() {
+    void liveModeAcceptsTheOfficialCandidateHostReturnedByTheSelfServeFeed() {
+        String candidateListing =
+                "https://beta.jobs.nhs.uk/candidate/jobadvert/C9321-26-1298";
+
+        AuthoritativeJobSourcePolicy.SourceMetadata source =
+                new AuthoritativeJobSourcePolicy("LIVE").normalize(
+                        "NHS_JOBS",
+                        "5523831",
+                        candidateListing,
+                        candidateListing,
+                        ATTRIBUTION,
+                        ATTRIBUTION_URL,
+                        LICENCE,
+                        DISCLAIMER);
+
+        assertThat(source.listingUrl()).isEqualTo(candidateListing);
+        assertThat(source.applyUrl()).isEqualTo(candidateListing);
+    }
+
+    @Test
+    void liveModeRejectsFixtureUrlsAndUnsafeVacancyPaths() {
         AuthoritativeJobSourcePolicy policy =
                 new AuthoritativeJobSourcePolicy("LIVE");
 
@@ -58,8 +78,19 @@ class AuthoritativeJobSourcePolicyTest {
         assertThatThrownBy(() -> policy.normalize(
                         "NHS_JOBS",
                         "C123",
-                        "https://www.jobs.nhs.uk/candidate/jobadvert/C999",
+                        "https://www.jobs.nhs.uk/candidate/jobadvert/C999/another-advert",
                         null,
+                        ATTRIBUTION,
+                        ATTRIBUTION_URL,
+                        LICENCE,
+                        DISCLAIMER))
+                .isInstanceOf(InvalidRequestException.class);
+
+        assertThatThrownBy(() -> policy.normalize(
+                        "NHS_JOBS",
+                        "C123",
+                        LISTING,
+                        "https://www.jobs.nhs.uk/candidate/jobadvert/C999",
                         ATTRIBUTION,
                         ATTRIBUTION_URL,
                         LICENCE,
