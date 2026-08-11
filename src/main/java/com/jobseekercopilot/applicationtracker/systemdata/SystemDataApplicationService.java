@@ -3,6 +3,8 @@ package com.jobseekercopilot.applicationtracker.systemdata;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationRecord;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationStatus;
 import com.jobseekercopilot.applicationtracker.dto.DocumentSourceType;
+import com.jobseekercopilot.applicationtracker.dto.DocumentGroundingState;
+import com.jobseekercopilot.applicationtracker.entity.FrozenDocumentSelectionState;
 import com.jobseekercopilot.applicationtracker.exception.InvalidRequestException;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationDocumentReconciliationRepository;
 import com.jobseekercopilot.applicationtracker.repository.ApplicationRecordRepository;
@@ -167,6 +169,8 @@ public class SystemDataApplicationService {
         target.setCvDocumentVersion(source.cvDocumentVersion());
         target.setCvDocumentContentSha256(source.cvDocumentContentSha256());
         target.setCvDocumentSourceType(DocumentSourceType.GENERATED);
+        target.setCvDocumentGroundingState(
+                DocumentGroundingState.LEGACY_UNSPECIFIED);
         target.setCvDocumentSelectedAt(source.updatedAt());
         target.setCoverLetterDocumentId(source.coverLetterDocumentId().toString());
         target.setCoverLetterDocumentFamilyId(
@@ -175,6 +179,8 @@ public class SystemDataApplicationService {
         target.setCoverLetterDocumentContentSha256(
                 source.coverLetterDocumentContentSha256());
         target.setCoverLetterDocumentSourceType(DocumentSourceType.GENERATED);
+        target.setCoverLetterDocumentGroundingState(
+                DocumentGroundingState.LEGACY_UNSPECIFIED);
         target.setCoverLetterDocumentSelectedAt(source.updatedAt());
         boolean progressed = source.status() != ApplicationStatus.SAVED
                 && source.status() != ApplicationStatus.DOCUMENTS_GENERATED;
@@ -188,6 +194,12 @@ public class SystemDataApplicationService {
                 progressed ? source.cvDocumentContentSha256() : null);
         target.setApplicationUsedCvDocumentSourceType(
                 progressed ? DocumentSourceType.GENERATED : null);
+        target.setApplicationUsedCvGroundingState(
+                progressed ? DocumentGroundingState.LEGACY_UNSPECIFIED : null);
+        target.setApplicationUsedCvState(
+                progressed
+                        ? FrozenDocumentSelectionState.SELECTED
+                        : FrozenDocumentSelectionState.UNKNOWN);
         target.setApplicationUsedCvDocumentSelectedAt(
                 progressed ? source.updatedAt() : null);
         target.setApplicationUsedCoverLetterDocumentId(
@@ -200,6 +212,12 @@ public class SystemDataApplicationService {
                 progressed ? source.coverLetterDocumentContentSha256() : null);
         target.setApplicationUsedCoverLetterDocumentSourceType(
                 progressed ? DocumentSourceType.GENERATED : null);
+        target.setApplicationUsedCoverLetterGroundingState(
+                progressed ? DocumentGroundingState.LEGACY_UNSPECIFIED : null);
+        target.setApplicationUsedCoverLetterState(
+                progressed
+                        ? FrozenDocumentSelectionState.SELECTED
+                        : FrozenDocumentSelectionState.UNKNOWN);
         target.setApplicationUsedCoverLetterDocumentSelectedAt(
                 progressed ? source.updatedAt() : null);
         target.setApplicationUsedAt(progressed ? source.appliedAt() : null);

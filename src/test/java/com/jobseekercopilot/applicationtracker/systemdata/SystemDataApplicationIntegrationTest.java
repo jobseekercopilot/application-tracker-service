@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jobseekercopilot.applicationtracker.dto.ApplicationRecordResponse;
 import com.jobseekercopilot.applicationtracker.dto.CreateApplicationRequest;
 import com.jobseekercopilot.applicationtracker.dto.UpdateStatusRequest;
+import com.jobseekercopilot.applicationtracker.dto.DocumentGroundingState;
+import com.jobseekercopilot.applicationtracker.entity.FrozenDocumentSelectionState;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationProvenance;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationRecord;
 import com.jobseekercopilot.applicationtracker.entity.ApplicationStatus;
@@ -109,6 +111,25 @@ class SystemDataApplicationIntegrationTest {
                 reconciliationRepository.findById(applied.id())
                         .orElseThrow()
                         .getStatus());
+        ApplicationRecord seededGenerated =
+                repository.findById(generated.id()).orElseThrow();
+        assertEquals(
+                DocumentGroundingState.LEGACY_UNSPECIFIED,
+                seededGenerated.getCvDocumentGroundingState());
+        assertEquals(
+                FrozenDocumentSelectionState.UNKNOWN,
+                seededGenerated.getApplicationUsedCvState());
+        ApplicationRecord seededApplied =
+                repository.findById(applied.id()).orElseThrow();
+        assertEquals(
+                DocumentGroundingState.LEGACY_UNSPECIFIED,
+                seededApplied.getApplicationUsedCvGroundingState());
+        assertEquals(
+                FrozenDocumentSelectionState.SELECTED,
+                seededApplied.getApplicationUsedCvState());
+        assertEquals(
+                FrozenDocumentSelectionState.SELECTED,
+                seededApplied.getApplicationUsedCoverLetterState());
         assertEquals(ordinary.getId(), repository.findById(ordinary.getId()).orElseThrow().getId());
 
         mockMvc.perform(get(
