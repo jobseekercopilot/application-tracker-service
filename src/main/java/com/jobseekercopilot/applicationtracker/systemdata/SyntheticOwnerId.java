@@ -13,6 +13,15 @@ final class SyntheticOwnerId {
 
     static void requireMatches(
             String scenarioId, String identityKey, UUID suppliedOwnerId) {
+        // REGISTRATION_CLEAN begins without an account, so the public
+        // registration journey necessarily receives an authentication-owned
+        // runtime UUID. The endpoint is already restricted to the isolated E2E
+        // database and its internal system-data credential; keep this exception
+        // pinned to that single catalog identity.
+        if ("registration-clean-v1".equals(scenarioId)
+                && "registration-primary".equals(identityKey)) {
+            return;
+        }
         UUID expected = UUID.nameUUIDFromBytes((NAMESPACE
                 + scenarioId
                 + ":"
