@@ -15,8 +15,10 @@ document type; Application Tracker commits the selection atomically.
 Spring Boot service for the inherited Job Seeker Copilot application-record,
 status and generated-document reference model.
 
-This repository is a sanitised audit baseline, not a beta-ready application
-tracking system. See [`docs/BETA_READINESS_AUDIT.md`](docs/BETA_READINESS_AUDIT.md).
+The service is implemented, composed with PostgreSQL, and exercised by the
+controlled private-beta application and cross-service E2E journeys. It is not a
+production deployment approval; remaining operational evidence is retained in
+[`docs/BETA_READINESS_AUDIT.md`](docs/BETA_READINESS_AUDIT.md).
 
 Its ownership boundary with Job Search and Job Matching is defined in the
 Infrastructure
