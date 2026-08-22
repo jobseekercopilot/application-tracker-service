@@ -1,7 +1,11 @@
 package com.jobseekercopilot.applicationtracker.dto;
 
+import com.jobseekercopilot.applicationtracker.entity.ApplicationProvenance;
+import com.jobseekercopilot.applicationtracker.entity.ApplicationStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+import java.util.UUID;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -15,38 +19,78 @@ import lombok.NoArgsConstructor;
 public class CreateApplicationRequest {
 
     @NotBlank(message = "userId is required")
+    @Size(max = 255, message = "userId must be at most 255 characters")
     @Schema(description = "ID of the user creating the application", example = "user-123", requiredMode = Schema.RequiredMode.REQUIRED)
     private String userId;
 
     @NotBlank(message = "jobId is required")
+    @Size(max = 255, message = "jobId must be at most 255 characters")
     @Schema(description = "ID of the job being applied to", example = "job-456", requiredMode = Schema.RequiredMode.REQUIRED)
     private String jobId;
 
     @Schema(description = "Stable cross-provider canonical job identifier", example = "job_abc123")
+    @Size(max = 255, message = "canonicalJobId must be at most 255 characters")
     private String canonicalJobId;
 
     @Schema(description = "Job provider name", example = "REED")
+    @Size(max = 64, message = "provider must be at most 64 characters")
     private String provider;
 
     @Schema(description = "Provider-specific job identifier", example = "123456")
+    @Size(max = 255, message = "externalJobId must be at most 255 characters")
     private String externalJobId;
 
+    @Schema(description = "Authoritative provider listing URL", example = "https://www.jobs.nhs.uk/candidate/jobadvert/C123")
+    @Size(max = 2048, message = "listingUrl must be at most 2048 characters")
+    private String listingUrl;
+
+    @Schema(description = "Official provider application URL when distinct from the listing URL")
+    @Size(max = 2048, message = "applyUrl must be at most 2048 characters")
+    private String applyUrl;
+
+    @Schema(description = "Provider attribution text", example = "Vacancy source: NHS Jobs")
+    @Size(max = 255, message = "attributionLabel must be at most 255 characters")
+    private String attributionLabel;
+
+    @Schema(description = "Authoritative provider attribution URL", example = "https://www.jobs.nhs.uk/")
+    @Size(max = 2048, message = "attributionSourceUrl must be at most 2048 characters")
+    private String attributionSourceUrl;
+
+    @Schema(description = "Licence URL governing the provider data")
+    @Size(max = 2048, message = "licenceUrl must be at most 2048 characters")
+    private String licenceUrl;
+
+    @Schema(description = "Required provider no-endorsement statement")
+    @Size(max = 1000, message = "disclaimer must be at most 1000 characters")
+    private String disclaimer;
+
     @NotBlank(message = "jobTitle is required")
+    @Size(max = 300, message = "jobTitle must be at most 300 characters")
     @Schema(description = "Title of the job", example = "Java Developer", requiredMode = Schema.RequiredMode.REQUIRED)
     private String jobTitle;
 
     @NotBlank(message = "companyName is required")
+    @Size(max = 300, message = "companyName must be at most 300 characters")
     @Schema(description = "Name of the company offering the job", example = "Example Ltd", requiredMode = Schema.RequiredMode.REQUIRED)
     private String companyName;
 
     @Schema(description = "Job location", example = "Dorking")
+    @Size(max = 300, message = "location must be at most 300 characters")
     private String location;
 
-    @NotBlank(message = "cvDocumentId is required")
-    @Schema(description = "ID of the generated CV document (reference only, content not stored here)", example = "cv-123", requiredMode = Schema.RequiredMode.REQUIRED)
-    private String cvDocumentId;
+    @Schema(description = "Approved CV version ID in Document Store; optional for manual/external applications", format = "uuid")
+    private UUID cvDocumentId;
 
-    @NotBlank(message = "coverLetterDocumentId is required")
-    @Schema(description = "ID of the generated cover letter document (reference only, content not stored here)", example = "cl-456", requiredMode = Schema.RequiredMode.REQUIRED)
-    private String coverLetterDocumentId;
+    @Schema(description = "Approved cover-letter version ID in Document Store; optional for manual/external applications", format = "uuid")
+    private UUID coverLetterDocumentId;
+
+    @Schema(
+            description = "How the application entered the tracker. Defaults to GENERATED for backwards-compatible producers.",
+            example = "MANUAL")
+    private ApplicationProvenance provenance;
+
+    @Schema(
+            description = "Initial lifecycle state. GENERATED may start as DOCUMENTS_GENERATED or APPLIED; MANUAL and EXTERNAL default to APPLIED and may explicitly start as SAVED.",
+            example = "SAVED")
+    private ApplicationStatus initialStatus;
 }

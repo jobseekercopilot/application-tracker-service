@@ -15,6 +15,12 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Test fail-closed history scanning
+        run: ./scripts/test-secret-history.sh
+      - name: Scan complete Git history
+        run: ./scripts/verify-secret-history.sh
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -22,3 +28,5 @@ jobs:
           cache: maven
       - name: Verify
         run: mvn -B clean verify
+      - name: Build container from source
+        run: docker build --tag application-tracker-service:ci .

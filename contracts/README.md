@@ -1,0 +1,97 @@
+# Application Tracker OpenAPI contract
+
+`openapi.json` is the producer-owned contract generated from the running
+Application Tracker Spring application. It is reviewed source, not a generated
+binary or a separately edited specification.
+
+## Update process
+
+1. Change the controller, DTO or OpenAPI metadata in this repository.
+2. Generate the candidate contract:
+
+   ```bash
+   mvn -B -Dtest=OpenApiExportTest \
+     -DapplicationTracker.updateContract=true test
+   ```
+
+3. Review `contracts/openapi.json` semantically and confirm that security,
+   request, response and error changes are intentional.
+4. Run `mvn -B clean verify` and the source-only Docker build.
+5. Merge the producer change before updating any consumer's pinned contract or
+   generated client. Consumers must record the immutable producer commit and
+   contract checksum they use.
+
+The default test mode compares the generated runtime document with the tracked
+contract as JSON and fails CI on semantic drift.
+
+## Versioning and compatibility
+
+The OpenAPI `info.version` follows semantic versioning:
+
+- patch: documentation or schema clarification that does not change runtime
+  compatibility;
+- minor: backward-compatible operations, fields or response definitions;
+- major: removed or renamed operations/fields, narrowed values, changed
+  authentication, or any other consumer-breaking change.
+
+The contract is version `4.9.0`. It retains the explicitly defined owner-scoped
+list boundary and lifecycle concurrency metadata from `2.1.0`, and replaces
+raw-entity, owner-wide System Data operations with a constrained versioned seed
+request and scenario-scoped seed/reset/verify operations. The minor version
+adds the owner-scoped paginated activity-history operation, optional actual
+occurrence time/reason on status commands, durable generated-withdrawal status,
+and Tracker-owned document-replacement workflows. Version `3.5.0` adds exact
+evidence provenance to current and frozen application-used document
+references, in addition to the owner-scoped durable document-reference
+reconciliation status operation. Those additions are backward compatible:
+existing fields remain, while `202`,
+operation identity, retry state, recovery code and explicit reconciliation
+health make partial or inconsistent cross-service work visible.
+Version `3.5.0` adds backward-compatible authoritative listing, application and
+attribution metadata to application create and read models. NHS source metadata
+is validated against either the official live vacancy origin and path or the
+isolated fixture origin selected by configuration.
+
+Version `4.0.0` replaces the obsolete evidence-section values with the
+canonical User Profile and Document Store taxonomy. That enum replacement is
+intentionally breaking for consumers that pinned the obsolete taxonomy.
+
+Version `4.1.0` adds `SAVED` as an opt-in initial state for manual/external
+applications and publishes its guarded progression to document preparation or
+application.
+
+Version `4.2.0` adds the owner-scoped atomic document-selection command. Both
+optional slots use mandatory `SELECTED`/`OMITTED` objects so a payload produced
+during a rolling deployment cannot accidentally clear an absent field. The
+command requires `expectedVersion` and `Idempotency-Key`, returns the
+authoritative record on stale conflict, and keeps the legacy one-slot endpoint
+available as a deprecated compatibility bridge.
+
+Version `4.7.0` adds the content-free `APPLICATION_SAVED` event value and uses
+it only when a creation command establishes the truthful pre-application
+`SAVED` state. Existing creation events and replay semantics remain compatible.
+
+Version `4.8.0` adds optional owner, source, original-byte hash and selection
+time fields to current and frozen exact-version descriptors. No existing field,
+operation, authentication rule or enum value is removed. The ordered lifecycle
+projection keeps `PURGED` terminal and exposes the retained minimal tombstone
+without making deleted content live again.
+
+Version `4.9.0` adds an internal, environment-data-authenticated runtime-owner
+reset and verification boundary. It accepts only the deterministic synthetic
+owner derived from the named scenario and identity and is enabled only for an
+explicitly isolated non-production database. Existing public and System Data
+fixture operations are unchanged.
+
+The owner-scoped list operation explicitly defines its service-token/Bearer
+alternatives, success model, stable `401`, `403` and `404` error models, and
+guaranteed application fields. Status mutation publishes response `version`,
+optional request `expectedVersion`, and a stable `409` model. The System Data
+route replacement is intentionally breaking and therefore requires the major
+version; the APP-07 additions are backward compatible. `ApplicationContractPolicyTest` fails closed if any of these
+boundaries is weakened accidentally.
+
+Breaking changes require an explicit producer review, a major version, and a
+coordinated consumer release. Rollback restores the previous tracked contract
+and compatible producer implementation together; consumers continue using
+their last reviewed immutable producer revision.

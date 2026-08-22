@@ -1,6 +1,8 @@
 package com.jobseekercopilot.applicationtracker.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import java.util.UUID;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -14,6 +16,6 @@ public class UpdateDocumentReferenceRequest {
     @NotBlank(message = "documentType is required")
     private String documentType;
 
-    @NotBlank(message = "documentId is required")
-    private String documentId;
+    @NotNull(message = "documentId is required")
+    private UUID documentId;
 }

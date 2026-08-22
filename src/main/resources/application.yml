@@ -5,25 +5,42 @@ spring:
   application:
     name: application-tracker-service
   datasource:
-    url: jdbc:h2:mem:applicationtracker
-    driver-class-name: org.h2.Driver
-    username: sa
-    password:
+    url: ${APPLICATION_TRACKER_DATABASE_URL}
+    driver-class-name: org.postgresql.Driver
+    username: ${APPLICATION_TRACKER_DATABASE_USERNAME}
+    password: ${APPLICATION_TRACKER_DATABASE_PASSWORD}
+    hikari:
+      initialization-fail-timeout: 1
+      data-source-properties:
+        sslmode: ${APPLICATION_TRACKER_DATABASE_SSL_MODE:verify-full}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration/common
+    clean-disabled: true
+    validate-on-migrate: true
+    validate-migration-naming: true
   h2:
     console:
-      enabled: true
-      path: /h2-console
+      enabled: false
   jpa:
     hibernate:
-      ddl-auto: create-drop
-    show-sql: true
-    database-platform: org.hibernate.dialect.H2Dialect
+      ddl-auto: validate
+    open-in-view: false
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+        jdbc:
+          time_zone: UTC
 
 logging:
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%X{correlationId}] [%X{serviceName}] [%thread] %logger{36} - %msg%n"
   level:
     com.jobseekercopilot: ${APP_LOG_LEVEL:INFO}
+    org.springframework.web.servlet.handler.HandlerMappingIntrospector: ERROR
+    org.hibernate.SQL: "OFF"
+    org.hibernate.orm.jdbc.bind: "OFF"
 
 management:
   endpoints:
@@ -31,6 +48,33 @@ management:
       exposure:
         include: health
 
+application-tracker:
+  source:
+    nhs-jobs:
+      mode: ${NHS_JOBS_SOURCE_MODE:LIVE}
+  reconciliation:
+    initial-delay-ms: ${APPLICATION_DOCUMENT_RECONCILIATION_INITIAL_DELAY_MS:45000}
+    delay-ms: ${APPLICATION_DOCUMENT_RECONCILIATION_DELAY_MS:30000}
+  workflows:
+    recovery-initial-delay-ms: ${APPLICATION_WORKFLOW_RECOVERY_INITIAL_DELAY_MS:30000}
+    recovery-delay-ms: ${APPLICATION_WORKFLOW_RECOVERY_DELAY_MS:30000}
+  database:
+    production-safety-check: ${APPLICATION_TRACKER_DATABASE_PRODUCTION_SAFETY_CHECK:true}
+    encryption-at-rest-enabled: ${APPLICATION_TRACKER_DATABASE_ENCRYPTION_AT_REST_ENABLED:false}
+    encryption-key-reference: ${APPLICATION_TRACKER_DATABASE_ENCRYPTION_KEY_REFERENCE:}
+    backup-encryption-enabled: ${APPLICATION_TRACKER_DATABASE_BACKUP_ENCRYPTION_ENABLED:false}
+    backup-key-reference: ${APPLICATION_TRACKER_DATABASE_BACKUP_KEY_REFERENCE:}
+  security:
+    jwk-set-uri: ${AUTH_JWKS_URI:http://localhost:8084/.well-known/jwks.json}
+    issuer: ${APPLICATION_TRACKER_JWT_ISSUER:job-seeker-copilot-authentication}
+    audience: ${APPLICATION_TRACKER_JWT_AUDIENCE:job-seeker-copilot-services}
+    service-identity:
+      producer-token: ${APPLICATION_TRACKER_PRODUCER_TOKEN:}
+      reader-token: ${APPLICATION_TRACKER_READER_TOKEN:}
+    environment-data-token: ${ENVIRONMENT_DATA_TOKEN:}
+
 services:
   document-store-service:
     base-url: ${DOCUMENT_STORE_SERVICE_URL:http://document-store-service:8089}
+    reader-token: ${DOCUMENT_STORE_READER_TOKEN:}
+    producer-token: ${DOCUMENT_STORE_PRODUCER_TOKEN:}

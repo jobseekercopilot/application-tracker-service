@@ -1,9 +1,12 @@
 package com.jobseekercopilot.applicationtracker.systemdata;
 
-import com.jobseekercopilot.applicationtracker.entity.ApplicationRecord;
-import com.jobseekercopilot.applicationtracker.repository.ApplicationRecordRepository;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Pattern;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -12,48 +15,118 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
-@RequestMapping("/internal/system-data")
+@RequestMapping(
+        value = "/internal/system-data",
+        produces = MediaType.APPLICATION_JSON_VALUE)
+@SecurityRequirement(name = "environmentDataToken")
+@Tag(name = "System Data Applications")
+@Validated
 public class ApplicationTrackerSystemDataController {
     private final EnvironmentDataGuard guard;
-    private final ApplicationRecordRepository repository;
+    private final SystemDataApplicationService systemDataService;
+    private final OwnerRuntimeApplicationService ownerRuntimeService;
 
-    public ApplicationTrackerSystemDataController(EnvironmentDataGuard guard, ApplicationRecordRepository repository) {
+    public ApplicationTrackerSystemDataController(
+            EnvironmentDataGuard guard,
+            SystemDataApplicationService systemDataService,
+            OwnerRuntimeApplicationService ownerRuntimeService) {
         this.guard = guard;
-        this.repository = repository;
+        this.systemDataService = systemDataService;
+        this.ownerRuntimeService = ownerRuntimeService;
     }
 
-    @PostMapping("/seed/applications")
-    public ResponseEntity<SystemDataResult> seedApplications(@RequestBody List<ApplicationRecord> records) {
+    @PostMapping(
+            value = "/v1/application-scenarios",
+            consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<SystemDataResult> seedApplications(
+            @Valid @RequestBody SystemDataApplicationSeedRequest request) {
         guard.requireEnabled();
-        List<ApplicationRecord> saved = repository.saveAll(records);
-        return ResponseEntity.ok(SystemDataResult.success("SEED", saved.size(), guard.activeEnvironment(), Map.of(
-                "applications", saved.size())));
+        int count = systemDataService.seed(request);
+        return ResponseEntity.ok(SystemDataResult.success(
+                "SEED",
+                count,
+                guard.activeEnvironment(),
+                Map.of(
+                        "schemaVersion", request.schemaVersion(),
+                        "scenarioId", request.scenarioId(),
+                        "applications", count)));
     }
 
-    @Transactional
-    @DeleteMapping("/scenario/{scenarioId}/applications/{userId}")
-    public ResponseEntity<SystemDataResult> resetApplications(@PathVariable String scenarioId, @PathVariable String userId) {
+    @DeleteMapping("/v1/application-scenarios/{scenarioId}/owners/{userId}")
+    public ResponseEntity<SystemDataResult> resetApplications(
+            @PathVariable
+            @Pattern(regexp = "[a-z0-9][a-z0-9-]{1,54}-v[1-9][0-9]{0,6}")
+            String scenarioId,
+            @PathVariable UUID userId) {
         guard.requireEnabled();
-        int count = repository.findByUserId(userId).size();
-        repository.deleteByUserId(userId);
-        return ResponseEntity.ok(SystemDataResult.success("RESET", count, guard.activeEnvironment(), Map.of(
-                "scenarioId", scenarioId,
-                "userId", userId)));
+        int count = systemDataService.reset(userId, scenarioId);
+        return ResponseEntity.ok(SystemDataResult.success(
+                "RESET",
+                count,
+                guard.activeEnvironment(),
+                Map.of("scenarioId", scenarioId, "applications", count)));
     }
 
-    @GetMapping("/verify/applications/{userId}")
-    public ResponseEntity<SystemDataResult> verifyApplications(@PathVariable String userId) {
+    @GetMapping("/v1/application-scenarios/{scenarioId}/owners/{userId}")
+    public ResponseEntity<SystemDataResult> verifyApplications(
+            @PathVariable
+            @Pattern(regexp = "[a-z0-9][a-z0-9-]{1,54}-v[1-9][0-9]{0,6}")
+            String scenarioId,
+            @PathVariable UUID userId) {
         guard.requireEnabled();
-        List<ApplicationRecord> records = repository.findByUserId(userId);
-        Map<String, Long> byStatus = records.stream()
-                .collect(java.util.stream.Collectors.groupingBy(record -> record.getStatus().name(), java.util.stream.Collectors.counting()));
-        return ResponseEntity.ok(SystemDataResult.success("VERIFY", records.size(), guard.activeEnvironment(), Map.of(
-                "userId", userId,
-                "applications", records.size(),
-                "byStatus", byStatus)));
+        SystemDataApplicationService.ScenarioApplicationSummary summary =
+                systemDataService.verify(userId, scenarioId);
+        return ResponseEntity.ok(SystemDataResult.success(
+                "VERIFY",
+                summary.count(),
+                guard.activeEnvironment(),
+                Map.of(
+                        "scenarioId", scenarioId,
+                        "applications", summary.count(),
+                        "byStatus", summary.byStatus())));
+    }
+
+    @DeleteMapping(
+            "/v1/runtime-owners/{scenarioId}/identities/{identityKey}/owners/{userId}")
+    public ResponseEntity<SystemDataResult> resetRuntimeOwner(
+            @PathVariable
+            @Pattern(regexp = "[a-z0-9][a-z0-9-]{1,54}-v[1-9][0-9]{0,6}")
+            String scenarioId,
+            @PathVariable
+            @Pattern(regexp = "[a-z0-9][a-z0-9-]{0,54}")
+            String identityKey,
+            @PathVariable UUID userId) {
+        guard.requireRuntimeOwnerCleanup();
+        SyntheticOwnerId.requireMatches(scenarioId, identityKey, userId);
+        OwnerRuntimeApplicationSummary summary = ownerRuntimeService.reset(userId);
+        return ResponseEntity.ok(SystemDataResult.success(
+                "RESET_RUNTIME_OWNER",
+                summary.total(),
+                guard.activeEnvironment(),
+                summary.details(scenarioId, identityKey)));
+    }
+
+    @GetMapping(
+            "/v1/runtime-owners/{scenarioId}/identities/{identityKey}/owners/{userId}")
+    public ResponseEntity<SystemDataResult> verifyRuntimeOwner(
+            @PathVariable
+            @Pattern(regexp = "[a-z0-9][a-z0-9-]{1,54}-v[1-9][0-9]{0,6}")
+            String scenarioId,
+            @PathVariable
+            @Pattern(regexp = "[a-z0-9][a-z0-9-]{0,54}")
+            String identityKey,
+            @PathVariable UUID userId) {
+        guard.requireRuntimeOwnerCleanup();
+        SyntheticOwnerId.requireMatches(scenarioId, identityKey, userId);
+        OwnerRuntimeApplicationSummary summary = ownerRuntimeService.verify(userId);
+        return ResponseEntity.ok(SystemDataResult.success(
+                "VERIFY_RUNTIME_OWNER",
+                summary.total(),
+                guard.activeEnvironment(),
+                summary.details(scenarioId, identityKey)));
     }
 }
