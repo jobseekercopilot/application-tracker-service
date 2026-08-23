@@ -32,13 +32,8 @@ public class ApplicationCreationTransaction {
             requireSameCommand(replay.get(), fingerprint);
             return replay;
         }
-        if (repository
-                .findByUserIdAndCanonicalJobIdAndFixtureScenarioIdIsNull(
-                        ownerId, canonicalJobId)
-                .isPresent()) {
-            throw new DuplicateApplicationException();
-        }
-        return Optional.empty();
+        return findCanonicalReplayOrRejectDuplicate(
+                ownerId, idempotencyKey, fingerprint, canonicalJobId);
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -52,11 +47,14 @@ public class ApplicationCreationTransaction {
                     replay.get(), candidate.getCreateRequestFingerprint());
             return replay.get();
         }
-        if (repository
-                .findByUserIdAndCanonicalJobIdAndFixtureScenarioIdIsNull(
-                        candidate.getUserId(), candidate.getCanonicalJobId())
-                .isPresent()) {
-            throw new DuplicateApplicationException();
+        Optional<ApplicationRecord> canonicalReplay =
+                findCanonicalReplayOrRejectDuplicate(
+                        candidate.getUserId(),
+                        candidate.getIdempotencyKey(),
+                        candidate.getCreateRequestFingerprint(),
+                        candidate.getCanonicalJobId());
+        if (canonicalReplay.isPresent()) {
+            return canonicalReplay.get();
         }
         ApplicationRecord created = repository.saveAndFlush(candidate);
         eventRecorder.recordCreated(created, actor);
@@ -76,14 +74,29 @@ public class ApplicationCreationTransaction {
             requireSameCommand(replay.get(), fingerprint);
             return replay.get();
         }
-        if (repository
+        return findCanonicalReplayOrRejectDuplicate(
+                        ownerId, idempotencyKey, fingerprint, canonicalJobId)
+                .orElseThrow(() -> new ApplicationCreationConflictException(
+                        "Application creation conflicted with another request. Retry with the same idempotency key."));
+    }
+
+    private Optional<ApplicationRecord> findCanonicalReplayOrRejectDuplicate(
+            String ownerId,
+            String idempotencyKey,
+            String fingerprint,
+            String canonicalJobId) {
+        Optional<ApplicationRecord> canonical = repository
                 .findByUserIdAndCanonicalJobIdAndFixtureScenarioIdIsNull(
-                        ownerId, canonicalJobId)
-                .isPresent()) {
+                        ownerId, canonicalJobId);
+        if (canonical.isEmpty()) {
+            return Optional.empty();
+        }
+        ApplicationRecord existing = canonical.get();
+        if (!idempotencyKey.equals(existing.getIdempotencyKey())) {
             throw new DuplicateApplicationException();
         }
-        throw new ApplicationCreationConflictException(
-                "Application creation conflicted with another request. Retry with the same idempotency key.");
+        requireSameCommand(existing, fingerprint);
+        return canonical;
     }
 
     private void requireSameCommand(
