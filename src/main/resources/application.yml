@@ -9,8 +9,6 @@ spring:
     driver-class-name: org.postgresql.Driver
     username: ${APPLICATION_TRACKER_DATABASE_USERNAME}
     password: ${APPLICATION_TRACKER_DATABASE_PASSWORD}
-    hikari:
-      initialization-fail-timeout: 1
   flyway:
     enabled: true
     locations: classpath:db/migration/common
